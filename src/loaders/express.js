@@ -18,18 +18,24 @@ export default async function expressLoader() {
 
   app.use(
     cors({
-      origin: ["https://agri-ai-wqy4.vercel.app"] || "http://localhost:3000",
+      origin: (origin, callback) => {
+        const allowedOrigins = [
+          "https://agri-ai-wqy4.vercel.app",
+          "http://localhost:3000",
+        ];
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      allowedHeaders: [
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Access-Control-Allow-Origin",
-      ],
-      credentials: true,
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     })
   );
+
+  app.options("*", cors());
 
   app.use(express.static("public"));
 
