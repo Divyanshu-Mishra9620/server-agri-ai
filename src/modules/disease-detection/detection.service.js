@@ -6,20 +6,20 @@ import { executeAnalysisPipeline } from "./langraph.pipeline.js";
 import { uploadToCloudinary } from "../../shared/utils/cloudinary.js";
 import config from "../../config/env.js";
 
-export const analyzeImage = async ({ 
-  filePath, 
-  originalName, 
-  userId, 
-  crop, 
-  location = {}, 
-  provider = "groq" 
+export const analyzeImage = async ({
+  filePath,
+  originalName,
+  userId,
+  crop,
+  location = {},
+  provider = "groq",
 }) => {
   let analysis = null;
-  
+
   try {
     // Create initial analysis record
     const imageUrlFallback = `${config.frontendUrl?.replace(/\/$/, "") || "http://localhost:3000"}/uploads/${path.basename(filePath)}`;
-    
+
     analysis = await Analysis.create({
       user: userId || null,
       imageUrl: imageUrlFallback,
@@ -28,38 +28,47 @@ export const analyzeImage = async ({
       location: {
         district: location.district,
         state: location.state,
-        coordinates: location.coordinates
+        coordinates: location.coordinates,
       },
       aiProvider: provider,
       status: "pending",
-      processingSteps: [{
-        step: 'creation',
-        status: 'completed',
-        result: { message: 'Analysis record created' }
-      }]
+      processingSteps: [
+        {
+          step: "creation",
+          status: "completed",
+          result: { message: "Analysis record created" },
+        },
+      ],
     });
 
     console.log(`Created analysis record: ${analysis._id}`);
 
     // Upload to Cloudinary if configured
     let imageUrl = imageUrlFallback;
-    if (config.cloudinaryApiKey && config.cloudinaryApiSecret && config.cloudinaryCloudName) {
+    if (
+      config.cloudinaryApiKey &&
+      config.cloudinaryApiSecret &&
+      config.cloudinaryCloudName
+    ) {
       try {
-        imageUrl = await uploadToCloudinary(filePath, { 
+        imageUrl = await uploadToCloudinary(filePath, {
           folder: "disease-analysis",
           transformation: [
             { width: 1000, height: 1000, crop: "limit" },
-            { quality: "auto" }
-          ]
+            { quality: "auto" },
+          ],
         });
-        
+
         // Update analysis with Cloudinary URL
         analysis.imageUrl = imageUrl;
         await analysis.save();
-        
+
         console.log(`Image uploaded to Cloudinary: ${imageUrl}`);
       } catch (uploadError) {
-        console.error('Cloudinary upload failed, using local URL:', uploadError);
+        console.error(
+          "Cloudinary upload failed, using local URL:",
+          uploadError
+        );
         // Continue with local URL
       }
     }
@@ -70,34 +79,33 @@ export const analyzeImage = async ({
       imageUrl,
       cropType: crop,
       location,
-      provider
+      provider,
     };
 
-    console.log('Starting LangGraph pipeline...');
+    console.log("Starting LangGraph pipeline...");
     const pipelineResult = await executeAnalysisPipeline(pipelineData);
-    
+
     // Refresh analysis from database to get latest updates
     const updatedAnalysis = await Analysis.findById(analysis._id);
-    
+
     if (!updatedAnalysis) {
-      throw new Error('Analysis record not found after pipeline execution');
+      throw new Error("Analysis record not found after pipeline execution");
     }
 
     console.log(`Analysis ${analysis._id} completed successfully`);
     return updatedAnalysis;
-
   } catch (error) {
-    console.error('Image analysis failed:', error);
-    
+    console.error("Image analysis failed:", error);
+
     if (analysis) {
       // Update analysis record with error
       analysis.status = "failed";
       analysis.error = error.message || String(error);
       analysis.processingSteps.push({
-        step: 'error_handling',
-        status: 'completed',
+        step: "error_handling",
+        status: "completed",
         error: error.message,
-        result: { errorType: error.constructor.name }
+        result: { errorType: error.constructor.name },
       });
       await analysis.save();
     }
@@ -107,7 +115,7 @@ export const analyzeImage = async ({
       try {
         fs.unlinkSync(filePath);
       } catch (cleanupError) {
-        console.error('Failed to clean up local file:', cleanupError);
+        console.error("Failed to clean up local file:", cleanupError);
       }
     }
 
@@ -121,7 +129,7 @@ export const getAnalysis = async (analysisId, userId = null) => {
 
   const analysis = await Analysis.findOne(query);
   if (!analysis) {
-    throw new Error('Analysis not found');
+    throw new Error("Analysis not found");
   }
 
   return analysis;
@@ -135,7 +143,7 @@ export const listAnalyses = async (userId = null, limit = 50, offset = 0) => {
     .sort({ createdAt: -1 })
     .limit(limit)
     .skip(offset)
-    .select('-rawResponses -processingSteps'); // Exclude heavy fields for listing
+    .select("-rawResponses -processingSteps"); // Exclude heavy fields for listing
 
   const total = await Analysis.countDocuments(query);
 
@@ -144,7 +152,7 @@ export const listAnalyses = async (userId = null, limit = 50, offset = 0) => {
     total,
     limit,
     offset,
-    hasMore: offset + limit < total
+    hasMore: offset + limit < total,
   };
 };
 
@@ -159,44 +167,46 @@ export const getAnalysisStats = async (userId = null) => {
         _id: null,
         total: { $sum: 1 },
         completed: {
-          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
         },
         failed: {
-          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] },
         },
         pending: {
-          $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
         },
         processing: {
-          $sum: { $cond: [{ $eq: ['$status', 'processing'] }, 1, 0] }
-        }
-      }
-    }
+          $sum: { $cond: [{ $eq: ["$status", "processing"] }, 1, 0] },
+        },
+      },
+    },
   ]);
 
-  return stats[0] || {
-    total: 0,
-    completed: 0,
-    failed: 0,
-    pending: 0,
-    processing: 0
-  };
+  return (
+    stats[0] || {
+      total: 0,
+      completed: 0,
+      failed: 0,
+      pending: 0,
+      processing: 0,
+    }
+  );
 };
 
 export const retryFailedAnalysis = async (analysisId, userId = null) => {
   const analysis = await getAnalysis(analysisId, userId);
-  
-  if (analysis.status !== 'failed') {
-    throw new Error('Only failed analyses can be retried');
+
+  if (analysis.status !== "failed") {
+    throw new Error("Only failed analyses can be retried");
   }
 
   // Reset analysis status
-  analysis.status = 'pending';
+  analysis.status = "pending";
   analysis.error = null;
   analysis.processingSteps.push({
-    step: 'retry_initiated',
-    status: 'completed',
-    result: { message: 'Analysis retry initiated' }
+    step: "retry_initiated",
+    status: "completed",
+    result: { message: "Analysis retry initiated" },
   });
   await analysis.save();
 
@@ -206,14 +216,14 @@ export const retryFailedAnalysis = async (analysisId, userId = null) => {
     imageUrl: analysis.imageUrl,
     cropType: analysis.crop,
     location: analysis.location,
-    provider: analysis.aiProvider
+    provider: analysis.aiProvider,
   };
 
   try {
     await executeAnalysisPipeline(pipelineData);
     return await Analysis.findById(analysisId);
   } catch (error) {
-    console.error('Retry failed:', error);
+    console.error("Retry failed:", error);
     throw error;
   }
 };
