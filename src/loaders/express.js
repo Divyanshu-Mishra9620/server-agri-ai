@@ -18,10 +18,16 @@ export default async function expressLoader() {
 
   app.use(
     cors({
-      origin: config.frontendUrl || "http://localhost:3000",
+      origin: ["https://agri-ai-wqy4.vercel.app"] || "http://localhost:3000",
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Access-Control-Allow-Origin",
+      ],
+      credentials: true,
     })
   );
 
