@@ -18,11 +18,7 @@ export default async function expressLoader() {
 
   app.use(
     cors({
-      origin: config.frontendUrl || [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://agri-ai-sigma.vercel.app",
-      ],
+      origin: "*",
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
