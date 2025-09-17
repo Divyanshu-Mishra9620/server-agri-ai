@@ -21,6 +21,7 @@ export default async function expressLoader() {
       origin: config.frontendUrl || [
         "http://localhost:3000",
         "http://localhost:3001",
+        "https://agri-ai-sigma.vercel.app",
       ],
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
