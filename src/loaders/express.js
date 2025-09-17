@@ -35,14 +35,13 @@ export default async function expressLoader() {
     })
   );
 
-  app.options("*", cors());
+  app.options(/.*/, cors());
 
   app.use(express.static("public"));
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-  // Health check endpoint (before other routes)
   app.get("/health", (req, res) => {
     res.json({
       success: true,
@@ -91,7 +90,6 @@ export default async function expressLoader() {
     });
   });
 
-  // Global error handler (must be last)
   app.use(errorHandler);
 
   return app;
