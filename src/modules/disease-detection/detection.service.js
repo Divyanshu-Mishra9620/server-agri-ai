@@ -41,8 +41,6 @@ export const analyzeImage = async ({
       ],
     });
 
-    console.log(`Created analysis record: ${analysis._id}`);
-
     // Upload to Cloudinary if configured
     let imageUrl = imageUrlFallback;
     if (
@@ -62,8 +60,6 @@ export const analyzeImage = async ({
         // Update analysis with Cloudinary URL
         analysis.imageUrl = imageUrl;
         await analysis.save();
-
-        console.log(`Image uploaded to Cloudinary: ${imageUrl}`);
       } catch (uploadError) {
         console.error(
           "Cloudinary upload failed, using local URL:",
@@ -91,8 +87,6 @@ export const analyzeImage = async ({
     if (!updatedAnalysis) {
       throw new Error("Analysis record not found after pipeline execution");
     }
-
-    console.log(`Analysis ${analysis._id} completed successfully`);
     return updatedAnalysis;
   } catch (error) {
     console.error("Image analysis failed:", error);

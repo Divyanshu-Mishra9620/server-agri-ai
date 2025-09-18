@@ -1,52 +1,52 @@
-import fetch from "node-fetch";
-import config from "../../config/env.js";
+import fetch from 'node-fetch';
+import config from '../../config/env.js';
 
 // Groq API Integration
 export class GroqProvider {
   constructor() {
     this.apiKey = config.groqApiKey;
-    this.baseUrl = "https://api.groq.com/openai/v1";
+    this.baseUrl = 'https://api.groq.com/openai/v1';
   }
 
   async analyzeImage(imageUrl, cropType, location) {
-    if (!this.apiKey) throw new Error("GROQ_API_KEY not configured");
+    if (!this.apiKey) throw new Error('GROQ_API_KEY not configured');
 
     const prompt = this.buildAnalysisPrompt(cropType, location);
-
+    
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct", // Correct vision model
+        model:  "meta-llama/llama-4-scout-17b-16e-instruct", // Correct vision model
         messages: [
           {
-            role: "user",
+            role: 'user',
             content: [
-              { type: "text", text: prompt },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
-          },
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: imageUrl } }
+            ]
+          }
         ],
         max_tokens: 1500,
-        temperature: 0.1,
-      }),
+        temperature: 0.1
+      })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Groq API Error Response:", errorText);
+      console.error('Groq API Error Response:', errorText);
       throw new Error(`Groq API error: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
-    console.log("Groq API Response:", JSON.stringify(result, null, 2));
-
+    console.log('Groq API Response:', JSON.stringify(result, null, 2));
+    
     const content = result.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error("No content in Groq API response");
+      throw new Error('No content in Groq API response');
     }
 
     return this.parseResponse(content);
@@ -56,14 +56,14 @@ export class GroqProvider {
     return `You are an expert agricultural pathologist. Analyze this plant image for diseases and provide detailed recommendations.
 
 Context:
-- Crop: ${cropType || "Unknown"}
-- Location: ${location?.district || "Unknown"}, ${location?.state || "Unknown"}
+- Crop: ${cropType || 'Unknown'}
+- Location: ${location?.district || 'Unknown'}, ${location?.state || 'Unknown'}
 
 IMPORTANT: You must respond with ONLY valid JSON. No explanations, no markdown formatting, just pure JSON.
 
 Required JSON structure:
 {
-  "disease": "specific disease name or 'Healthy' if no disease detected",
+  "disease": "specific disease name or 'Healthy' if no disease detected. If invalid image which is not related to plants, give 'Invalid image'",
   "confidence": 0.85,
   "severity": "low",
   "symptoms": ["visible symptom 1", "visible symptom 2"],
@@ -84,88 +84,109 @@ Required JSON structure:
   "prevention": ["Proper plant spacing", "Avoid overhead watering", "Regular pruning"]
 }
 
-Analyze the image carefully and provide specific, actionable recommendations. Ensure all arrays have at least 2-3 items.`;
+SPECIAL CASE: If the image is invalid (not plant-related), return:
+{
+  "disease": "Invalid image",
+  "confidence": 0,
+  "severity": "unknown",
+  "symptoms": [],
+  "treatment": [],
+  "fertilizers": [],
+  "homeRemedies": [],
+  "prevention": []
+}
+
+Analyze the image carefully and provide specific, actionable recommendations. Ensure all arrays have at least 2-3 items for valid plant images.`;
   }
 
   parseResponse(content) {
     try {
-      console.log("Raw Groq Response:", content);
-
+      console.log('Raw Groq Response:', content);
+      
       // Handle various response formats
       let jsonStr = content.trim();
-
+      
       // Remove markdown code blocks if present
-      const markdownMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const markdownMatch = jsonStr.match(/(?:json)?\s*([\s\S]*?)\s*/);
       if (markdownMatch) {
         jsonStr = markdownMatch[1].trim();
       }
-
+      
       // Extract JSON object if wrapped in text
       const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonStr = jsonMatch[0];
       }
-
+      
       // Handle "safe" response from safety model
-      if (jsonStr === "safe" || jsonStr.includes("safe")) {
-        throw new Error(
-          "Groq returned safety response instead of analysis. Please check the model configuration."
-        );
+      if (jsonStr === 'safe' || jsonStr.includes('safe')) {
+        throw new Error('Groq returned safety response instead of analysis. Please check the model configuration.');
       }
-
+      
       const parsed = JSON.parse(jsonStr);
-
-      // Validate required fields
-      if (!parsed.disease) parsed.disease = "Analysis incomplete";
+      
+      // Check if it's an invalid image case
+      if (parsed.disease === 'Invalid image') {
+        return {
+          disease: 'Invalid image',
+          confidence: 0,
+          severity: 'unknown',
+          symptoms: [],
+          treatment: [],
+          fertilizers: [],
+          homeRemedies: [],
+          prevention: []
+        };
+      }
+      
+      // Validate required fields for valid plant images
+      if (!parsed.disease) parsed.disease = 'Analysis incomplete';
       if (!parsed.confidence) parsed.confidence = 0.5;
-      if (!parsed.severity) parsed.severity = "medium";
-      if (!Array.isArray(parsed.symptoms))
-        parsed.symptoms = ["Unable to determine symptoms"];
+      if (!parsed.severity) parsed.severity = 'medium';
+      if (!Array.isArray(parsed.symptoms)) parsed.symptoms = ['Unable to determine symptoms'];
       if (!Array.isArray(parsed.treatment)) parsed.treatment = [];
       if (!Array.isArray(parsed.fertilizers)) parsed.fertilizers = [];
       if (!Array.isArray(parsed.homeRemedies)) parsed.homeRemedies = [];
       if (!Array.isArray(parsed.prevention)) parsed.prevention = [];
-
+      
       return parsed;
     } catch (error) {
-      console.error("Failed to parse Groq response:", error);
-      console.error("Content that failed to parse:", content);
-
-      // Return fallback response
+      console.error('Failed to parse Groq response:', error);
+      console.error('Content that failed to parse:', content);
+      
+      // Return fallback response only for parsing errors, not invalid images
       return this.getFallbackResponse(error.message);
     }
   }
 
   getFallbackResponse(errorMessage) {
     return {
-      disease: "Analysis failed - unable to process image",
+      disease: 'Analysis failed - unable to process image',
       confidence: 0,
-      severity: "unknown",
-      symptoms: ["Could not analyze symptoms"],
-      treatment: [
-        {
-          method: "Manual Inspection Required",
-          description: "Please consult with local agricultural expert",
-          priority: "high",
-        },
-      ],
-      fertilizers: ["NPK 10-10-10", "Organic compost"],
-      homeRemedies: ["Neem oil spray"],
-      prevention: ["Regular plant monitoring"],
-      error: errorMessage,
+      severity: 'unknown',
+      symptoms: ['Could not analyze symptoms'],
+      treatment: [{
+        method: 'Manual Inspection Required',
+        description: 'Please consult with local agricultural expert',
+        priority: 'high'
+      }],
+      fertilizers: ['NPK 10-10-10', 'Organic compost'],
+      homeRemedies: ['Neem oil spray'],
+      prevention: ['Regular plant monitoring'],
+      error: errorMessage
     };
   }
 }
 
-// Gemini API Integration
+// Gemini API Integration  
 export class GeminiProvider {
   constructor() {
     this.apiKey = config.geminiApiKey;
-    this.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+    this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
   }
 
   async analyzeImage(imageUrl, cropType, location) {
-    if (!this.apiKey) throw new Error("GEMINI_API_KEY not configured");
+    if (!this.apiKey) throw new Error('GEMINI_API_KEY not configured');
 
     // Add retry logic for overloaded API
     const maxRetries = 3;
@@ -174,41 +195,39 @@ export class GeminiProvider {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         console.log(`Gemini API attempt ${attempt}/${maxRetries}`);
-
+        
         // Convert image URL to base64 for Gemini
         const imageData = await this.fetchImageAsBase64(imageUrl);
         const prompt = this.buildAnalysisPrompt(cropType, location);
 
-        const response = await fetch(
-          `${this.baseUrl}/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`,
+        const response = await fetch(`
+          ${this.baseUrl}/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    { text: prompt },
-                    {
-                      inline_data: {
-                        mime_type: "image/jpeg",
-                        data: imageData,
-                      },
-                    },
-                  ],
-                },
-              ],
+              contents: [{
+                parts: [
+                  { text: prompt },
+                  {
+                    inline_data: {
+                      mime_type: 'image/jpeg',
+                      data: imageData
+                    }
+                  }
+                ]
+              }],
               generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 1500,
-              },
-            }),
+                maxOutputTokens: 1500
+              }
+            })
           }
         );
 
         if (response.status === 503) {
           // API overloaded, wait and retry
-          await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
           continue;
         }
 
@@ -219,19 +238,17 @@ export class GeminiProvider {
 
         const result = await response.json();
         const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!content) throw new Error("No content in Gemini response");
-
+        
+        if (!content) throw new Error('No content in Gemini response');
+        
         return this.parseResponse(content);
+        
       } catch (error) {
         lastError = error;
         if (attempt === maxRetries) break;
-
-        console.log(
-          `Gemini attempt ${attempt} failed, retrying:`,
-          error.message
-        );
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        
+        console.log(`Gemini attempt ${attempt} failed, retrying:, error.message`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
 
@@ -245,7 +262,7 @@ export class GeminiProvider {
         throw new Error(`Failed to fetch image: ${response.status}`);
       }
       const buffer = await response.buffer();
-      return buffer.toString("base64");
+      return buffer.toString('base64');
     } catch (error) {
       throw new Error(`Image fetch failed: ${error.message}`);
     }
@@ -255,12 +272,12 @@ export class GeminiProvider {
     return `Analyze this plant image as an expert agricultural pathologist.
 
 Context:
-- Crop: ${cropType || "Unknown"}  
+- Crop: ${cropType || 'Unknown'}  
 - Location: ${location?.district}, ${location?.state}
 
 Return ONLY valid JSON with this exact structure:
 {
-  "disease": "specific disease name or 'Healthy'",
+  "disease": "specific disease name or 'Healthy' or 'Invalid image' if not plant-related",
   "confidence": 0.85,
   "severity": "low|medium|high", 
   "symptoms": ["visible symptoms"],
@@ -270,59 +287,67 @@ Return ONLY valid JSON with this exact structure:
   "prevention": ["preventive measures"]
 }
 
-Be specific and provide at least 2-3 items in each array. No explanations outside JSON.`;
+IMPORTANT: If the image is not plant-related (invalid image), return empty arrays for symptoms, treatment, fertilizers, homeRemedies, and prevention.
+
+Be specific and provide at least 2-3 items in each array for valid plant images. No explanations outside JSON.`;
   }
 
   parseResponse(content) {
     try {
-      const jsonMatch =
-        content.match(/```json\s*([\s\S]*?)\s*```/) ||
-        content.match(/\{[\s\S]*\}/);
+      const jsonMatch = content.match(/json\s*([\s\S]*?)\s*/) || content.match(/\{[\s\S]*\}/);
       const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
       const parsed = JSON.parse(jsonStr);
-
-      // Validate and set defaults
+      
+      // Check for invalid image case
+      if (parsed.disease === 'Invalid image') {
+        return {
+          disease: 'Invalid image',
+          confidence: 0,
+          severity: 'unknown',
+          symptoms: [],
+          treatment: [],
+          fertilizers: [],
+          homeRemedies: [],
+          prevention: []
+        };
+      }
+      
+      // Validate and set defaults for valid plant images
       return this.validateResponse(parsed);
     } catch (error) {
-      console.error("Failed to parse Gemini response:", error);
+      console.error('Failed to parse Gemini response:', error);
       return this.getFallbackResponse(error.message);
     }
   }
 
   validateResponse(parsed) {
     return {
-      disease: parsed.disease || "Unable to determine",
+      disease: parsed.disease || 'Unable to determine',
       confidence: parsed.confidence || 0.5,
-      severity: parsed.severity || "medium",
-      symptoms: Array.isArray(parsed.symptoms)
-        ? parsed.symptoms
-        : ["Symptoms unclear"],
+      severity: parsed.severity || 'medium',
+      symptoms: Array.isArray(parsed.symptoms) ? parsed.symptoms : ['Symptoms unclear'],
       treatment: Array.isArray(parsed.treatment) ? parsed.treatment : [],
       fertilizers: Array.isArray(parsed.fertilizers) ? parsed.fertilizers : [],
-      homeRemedies: Array.isArray(parsed.homeRemedies)
-        ? parsed.homeRemedies
-        : [],
-      prevention: Array.isArray(parsed.prevention) ? parsed.prevention : [],
+      homeRemedies: Array.isArray(parsed.homeRemedies) ? parsed.homeRemedies : [],
+      prevention: Array.isArray(parsed.prevention) ? parsed.prevention : []
     };
   }
 
   getFallbackResponse(errorMessage) {
     return {
-      disease: "Analysis failed",
+      disease: 'Analysis failed',
       confidence: 0,
-      severity: "unknown",
-      symptoms: ["Unable to analyze"],
-      treatment: [
-        {
-          method: "Expert Consultation",
-          description: "Consult local agricultural expert",
-          priority: "high",
-        },
-      ],
-      fertilizers: ["Balanced NPK fertilizer"],
-      homeRemedies: ["Organic compost application"],
-      prevention: ["Regular monitoring"],
-      error: errorMessage,
+      severity: 'unknown',
+      symptoms: ['Unable to analyze'],
+      treatment: [{
+        method: 'Expert Consultation',
+        description: 'Consult local agricultural expert',
+        priority: 'high'
+      }],
+      fertilizers: ['Balanced NPK fertilizer'],
+      homeRemedies: ['Organic compost application'],
+      prevention: ['Regular monitoring'],
+      error: errorMessage
     };
   }
 }
@@ -331,21 +356,21 @@ Be specific and provide at least 2-3 items in each array. No explanations outsid
 export class HuggingFaceProvider {
   constructor() {
     this.apiKey = config.huggingFaceApiKey;
-    this.baseUrl = "https://api-inference.huggingface.co/models";
+    this.baseUrl = 'https://api-inference.huggingface.co/models';
   }
 
   async analyzeImage(imageUrl, cropType, location) {
-    if (!this.apiKey) throw new Error("HUGGINGFACE_API_KEY not configured");
+    if (!this.apiKey) throw new Error('HUGGINGFACE_API_KEY not configured');
 
     try {
       const imageBuffer = await this.fetchImageBuffer(imageUrl);
-
+      
       // Use a plant disease specific model if available
       const classification = await this.classifyPlantDisease(imageBuffer);
-
+      
       return this.formatResponse(classification, cropType, location);
     } catch (error) {
-      console.error("HuggingFace analysis failed:", error);
+      console.error('HuggingFace analysis failed:', error);
       return this.getFallbackResponse(error.message);
     }
   }
@@ -353,19 +378,19 @@ export class HuggingFaceProvider {
   async classifyPlantDisease(imageBuffer) {
     // Try plant-specific model first, fallback to general classification
     const models = [
-      "microsoft/resnet-50", // General classification
-      "google/vit-base-patch16-224", // Vision transformer
+      'microsoft/resnet-50', // General classification
+      'google/vit-base-patch16-224' // Vision transformer
     ];
 
     for (const model of models) {
       try {
         const response = await fetch(`${this.baseUrl}/${model}`, {
-          method: "POST",
+          method: 'POST',
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/octet-stream",
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/octet-stream'
           },
-          body: imageBuffer,
+          body: imageBuffer
         });
 
         if (response.ok) {
@@ -377,7 +402,7 @@ export class HuggingFaceProvider {
       }
     }
 
-    throw new Error("All HuggingFace models failed");
+    throw new Error('All HuggingFace models failed');
   }
 
   async fetchImageBuffer(imageUrl) {
@@ -390,7 +415,23 @@ export class HuggingFaceProvider {
 
   formatResponse(classification, cropType, location) {
     const topResult = classification[0] || {};
-
+    
+    // Check if this looks like a non-plant image based on classification
+    const isInvalidImage = this.checkIfInvalidImage(topResult.label);
+    
+    if (isInvalidImage) {
+      return {
+        disease: 'Invalid image',
+        confidence: 0,
+        severity: 'unknown',
+        symptoms: [],
+        treatment: [],
+        fertilizers: [],
+        homeRemedies: [],
+        prevention: []
+      };
+    }
+    
     return {
       disease: this.interpretClassification(topResult.label, cropType),
       confidence: topResult.score || 0.5,
@@ -399,104 +440,115 @@ export class HuggingFaceProvider {
       treatment: this.generateTreatments(topResult.label, cropType),
       fertilizers: this.recommendFertilizers(cropType, location),
       homeRemedies: this.suggestHomeRemedies(),
-      prevention: this.preventiveMeasures(cropType),
+      prevention: this.preventiveMeasures(cropType)
     };
+  }
+
+  checkIfInvalidImage(label) {
+    if (!label) return false;
+    
+    const nonPlantKeywords = [
+      'person', 'human', 'face', 'car', 'vehicle', 'building', 'house', 
+      'animal', 'dog', 'cat', 'bird', 'phone', 'computer', 'furniture',
+      'food', 'drink', 'sky', 'water', 'rock', 'mountain', 'road'
+    ];
+    
+    const lowerLabel = label.toLowerCase();
+    return nonPlantKeywords.some(keyword => lowerLabel.includes(keyword));
   }
 
   interpretClassification(label, cropType) {
     if (!label) return `${cropType} condition unknown`;
-
+    
     // Map classification labels to plant diseases
     const diseaseKeywords = {
-      leaf: "Leaf disease",
-      spot: "Leaf spot",
-      rust: "Plant rust",
-      blight: "Blight",
-      yellow: "Yellowing disease",
-      brown: "Brown spot disease",
-      healthy: "Healthy plant",
+      'leaf': 'Leaf disease',
+      'spot': 'Leaf spot',
+      'rust': 'Plant rust',
+      'blight': 'Blight',
+      'yellow': 'Yellowing disease',
+      'brown': 'Brown spot disease',
+      'healthy': 'Healthy plant'
     };
-
-    const lowerLabel = label?.toLowerCase();
+    
+    const lowerLabel = label.toLowerCase();
     for (const [keyword, disease] of Object.entries(diseaseKeywords)) {
       if (lowerLabel.includes(keyword)) {
         return disease;
       }
     }
-
-    return `Possible ${label.replace(/_/g, " ")} condition`;
+    
+    return `Possible ${label.replace('/_/g', ' ')} condition`;
   }
 
   determineSeverity(confidence) {
-    if (confidence > 0.8) return "high";
-    if (confidence > 0.5) return "medium";
-    return "low";
+    if (confidence > 0.8) return 'high';
+    if (confidence > 0.5) return 'medium';
+    return 'low';
   }
 
   generateSymptoms(label) {
-    const baseSymptoms = ["Visible leaf changes", "Abnormal coloration"];
-    if (label?.includes("spot")) baseSymptoms.push("Spotted pattern on leaves");
-    if (label?.includes("yellow")) baseSymptoms.push("Yellowing of foliage");
+    const baseSymptoms = ['Visible leaf changes', 'Abnormal coloration'];
+    if (label?.includes('spot')) baseSymptoms.push('Spotted pattern on leaves');
+    if (label?.includes('yellow')) baseSymptoms.push('Yellowing of foliage');
     return baseSymptoms;
   }
 
   generateTreatments(label, cropType) {
     return [
       {
-        method: "Fungicide Treatment",
+        method: 'Fungicide Treatment',
         description: `Apply appropriate fungicide for ${cropType}`,
-        priority: "high",
+        priority: 'high'
       },
       {
-        method: "Cultural Practice",
-        description: "Improve plant spacing and air circulation",
-        priority: "medium",
-      },
+        method: 'Cultural Practice',
+        description: 'Improve plant spacing and air circulation',
+        priority: 'medium'
+      }
     ];
   }
 
   recommendFertilizers(cropType, location) {
     return [
-      "NPK 10-10-10 (Balanced fertilizer)",
-      "Organic compost",
-      "Potassium sulfate for disease resistance",
+      'NPK 10-10-10 (Balanced fertilizer)',
+      'Organic compost',
+      'Potassium sulfate for disease resistance'
     ];
   }
 
   suggestHomeRemedies() {
     return [
-      "Neem oil spray (organic treatment)",
-      "Baking soda solution (1 tsp per liter)",
-      "Garlic extract spray",
+      'Neem oil spray (organic treatment)',
+      'Baking soda solution (1 tsp per liter)',
+      'Garlic extract spray'
     ];
   }
 
   preventiveMeasures(cropType) {
     return [
-      "Maintain proper plant spacing",
-      "Ensure good drainage",
-      "Regular inspection and early detection",
-      "Crop rotation practices",
+      'Maintain proper plant spacing',
+      'Ensure good drainage',
+      'Regular inspection and early detection',
+      'Crop rotation practices'
     ];
   }
 
   getFallbackResponse(errorMessage) {
     return {
-      disease: "Unable to analyze with HuggingFace",
+      disease: 'Unable to analyze with HuggingFace',
       confidence: 0,
-      severity: "unknown",
-      symptoms: ["Analysis failed"],
-      treatment: [
-        {
-          method: "Manual Inspection",
-          description: "Visual inspection by agricultural expert recommended",
-          priority: "high",
-        },
-      ],
-      fertilizers: ["Balanced NPK fertilizer", "Organic matter"],
-      homeRemedies: ["Neem oil application"],
-      prevention: ["Regular plant monitoring"],
-      error: errorMessage,
+      severity: 'unknown',
+      symptoms: ['Analysis failed'],
+      treatment: [{
+        method: 'Manual Inspection',
+        description: 'Visual inspection by agricultural expert recommended',
+        priority: 'high'
+      }],
+      fertilizers: ['Balanced NPK fertilizer', 'Organic matter'],
+      homeRemedies: ['Neem oil application'],
+      prevention: ['Regular plant monitoring'],
+      error: errorMessage
     };
   }
 }
@@ -504,30 +556,23 @@ export class HuggingFaceProvider {
 // Provider factory with fallback logic
 export function createProvider(providerName) {
   const providers = {
-    groq: GroqProvider,
-    gemini: GeminiProvider,
-    huggingface: HuggingFaceProvider,
+    'groq': GroqProvider,
+    'gemini': GeminiProvider,
+    'huggingface': HuggingFaceProvider
   };
 
   const ProviderClass = providers[providerName];
   if (!ProviderClass) {
-    throw new Error(
-      `Unknown provider: ${providerName}. Available: ${Object.keys(providers).join(", ")}`
-    );
+    throw new Error(`Unknown provider: ${providerName}. Available: ${Object.keys(providers).join(', ')}`);
   }
 
   return new ProviderClass();
 }
 
 // Multi-provider analysis with fallback
-export async function analyzeWithFallback(
-  imageUrl,
-  cropType,
-  location,
-  preferredProvider = "groq"
-) {
-  const providers = ["groq", "gemini", "huggingface"];
-
+export async function analyzeWithFallback(imageUrl, cropType, location, preferredProvider = 'groq') {
+  const providers = ['groq', 'gemini', 'huggingface'];
+  
   // Put preferred provider first
   if (preferredProvider && providers.includes(preferredProvider)) {
     providers.splice(providers.indexOf(preferredProvider), 1);
@@ -535,20 +580,26 @@ export async function analyzeWithFallback(
   }
 
   let lastError;
-
+  
   for (const providerName of providers) {
     try {
       console.log(`Trying provider: ${providerName}`);
       const provider = createProvider(providerName);
       const result = await provider.analyzeImage(imageUrl, cropType, location);
-
+      
+      // Don't fallback to next provider if it's an invalid image
+      if (result.disease === 'Invalid image') {
+        console.log(`Invalid image detected by provider: ${providerName}`);
+        return { ...result, provider: providerName };
+      }
+      
       // Validate result has meaningful data
-      if (result.disease && result.disease !== "Analysis failed") {
+      if (result.disease && result.disease !== 'Analysis failed') {
         console.log(`Success with provider: ${providerName}`);
         return { ...result, provider: providerName };
       }
     } catch (error) {
-      console.log(`Provider ${providerName} failed:`, error.message);
+      console.log(`Provider ${providerName} failed:, error.message`);
       lastError = error;
       continue;
     }
