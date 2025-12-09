@@ -1,15 +1,24 @@
 // modules/chat/chat.routes.js
 import { Router } from "express";
-import { chatSuggest, geocodeAddress, getWeather, getMarketTrends, analyzeSoil } from "./chat.controller.js";
+import {
+  chatSuggest,
+  geocodeAddress,
+  getWeather,
+  getMarketTrends,
+  analyzeSoil,
+} from "./chat.controller.js";
+import { streamSuggestion, getSuggestion } from "./stream.controller.js";
 
 import { uploadSingle } from "../../shared/utils/upload.js";
 import { authMiddleware } from "../../shared/middlewares/authMiddleware.js";
 
 const router = Router();
 
+// New streaming suggestion endpoints
+router.post("/suggestions/suggest-stream", authMiddleware, streamSuggestion);
+router.post("/suggestions/suggest-direct", authMiddleware, getSuggestion);
 
 router.post("/suggest", authMiddleware, chatSuggest);
-
 
 router.post("/geo/geocode", authMiddleware, geocodeAddress);
 router.get("/weather/current", authMiddleware, getWeather);
