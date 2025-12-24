@@ -11,8 +11,6 @@ const groq = new ChatGroq({
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// FIXED: Correct AgentState definition for LangGraph
-// The StateGraph expects each field to have a 'value' function and 'default' function
 const AgentState = {
   messages: {
     value: (x, y) => {
@@ -56,7 +54,6 @@ const AgentState = {
   },
 };
 
-// Safe helper function to extract context information
 function safeExtractContext(context) {
   const safeContext = context || {};
 
@@ -96,7 +93,6 @@ async function analyzeContext(state) {
     !!config.groqApiKey
   );
 
-  // Extract safe context
   const safeContext = safeExtractContext(context);
   console.log("🔍 [DEBUG] Safe context:", JSON.stringify(safeContext, null, 2));
 
@@ -137,7 +133,6 @@ Respond in JSON format:
       console.warn("⚠️ [DEBUG] JSON parsing failed:", parseError.message);
       console.log("Raw content:", result.content);
 
-      // Try to extract JSON from the response if it's wrapped in other text
       const jsonMatch = result.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
@@ -189,10 +184,8 @@ async function generateRecommendations(state) {
     !!config.geminiApiKey
   );
 
-  // Extract safe context
   const safeContext = safeExtractContext(context);
 
-  // Format context for display
   const formatContextForPrompt = (ctx) => {
     let contextStr = "";
 
@@ -304,10 +297,8 @@ async function formatResponse(state) {
       ? recommendations[0]
       : "I'm here to help with your farming questions!";
 
-  // Extract safe context
   const safeContext = safeExtractContext(context);
 
-  // Add contextual tips based on available data
   let additionalTips = [];
 
   if (safeContext.weather) {
@@ -422,9 +413,7 @@ function getFallbackAnalysis() {
 function createFarmerAssistantWorkflow() {
   console.log("🏗️ [DEBUG] Creating workflow with AgentState:", AgentState);
 
-  // CRITICAL FIX: Try different approaches for StateGraph initialization
   try {
-    // Method 1: Direct state definition (most common in newer versions)
     const workflow = new StateGraph({
       channels: AgentState,
     });
@@ -449,7 +438,6 @@ function createFarmerAssistantWorkflow() {
     console.log("Error:", error1.message);
 
     try {
-      // Method 2: Direct AgentState (older versions or different configuration)
       const workflow = new StateGraph(AgentState);
 
       workflow
@@ -479,7 +467,6 @@ export async function executeFarmerAssistantPipeline(messages, context = {}) {
   console.log("🚀 [DEBUG] Input messages length:", messages?.length);
   console.log("🚀 [DEBUG] Input context keys:", Object.keys(context || {}));
 
-  // Test API keys first
   console.log("🚀 [DEBUG] Environment check:");
   console.log("🚀 [DEBUG] - Config object exists:", !!config);
   console.log("🚀 [DEBUG] - GROQ key exists:", !!config.groqApiKey);
@@ -501,7 +488,6 @@ export async function executeFarmerAssistantPipeline(messages, context = {}) {
   try {
     const workflow = createFarmerAssistantWorkflow();
 
-    // Ensure safe initial state
     const initialState = {
       messages: Array.isArray(messages) ? messages : [],
       context: context && typeof context === "object" ? context : {},
@@ -537,7 +523,6 @@ export async function executeFarmerAssistantPipeline(messages, context = {}) {
     console.error("❌ [DEBUG] LangGraph pipeline error:", error.message);
     console.error("❌ [DEBUG] Full stack:", error.stack);
 
-    // Enhanced fallback response generation
     const lastMessage =
       Array.isArray(messages) && messages.length > 0
         ? messages[messages.length - 1]?.content || ""

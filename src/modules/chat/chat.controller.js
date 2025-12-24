@@ -47,7 +47,6 @@ export async function geocodeAddress(req, res, next) {
       });
     }
 
-    // Using a free geocoding service
     const response = await fetch(
       `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(address)}&key=${process.env.OPENCAGE_API_KEY || "demo"}&limit=1&countrycode=IN`
     );
@@ -77,7 +76,6 @@ export async function geocodeAddress(req, res, next) {
     }
   } catch (err) {
     console.error("Geocoding error:", err);
-    // Fallback response for demo
     res.json({
       success: true,
       lat: 28.6139,
@@ -112,7 +110,6 @@ export async function getWeather(req, res, next) {
 
     let weatherData;
     if (apiKey === "demo") {
-      // Demo data for testing
       weatherData = {
         main: { temp: 28, humidity: 65 },
         weather: [{ description: "partly cloudy" }],
@@ -131,7 +128,6 @@ export async function getWeather(req, res, next) {
     });
   } catch (err) {
     console.error("Weather error:", err);
-    // Fallback weather data
     res.json({
       success: true,
       temp: 26,
@@ -189,7 +185,6 @@ export async function analyzeSoil(req, res, next) {
 
     try {
       if (!config.geminiApiKey) {
-        // Mock response for testing
         return res.json({
           success: true,
           summary:
@@ -203,7 +198,6 @@ export async function analyzeSoil(req, res, next) {
         });
       }
 
-      // Read the image file
       const imageData = fs.readFileSync(imagePath);
       const base64Image = imageData.toString("base64");
 
@@ -243,7 +237,6 @@ Keep the response concise but informative.
         crop: crop || null,
       });
     } finally {
-      // Clean up uploaded file
       if (fs.existsSync(imagePath)) {
         fs.unlinkSync(imagePath);
       }
@@ -251,12 +244,10 @@ Keep the response concise but informative.
   } catch (err) {
     console.error("Soil analysis error:", err);
 
-    // Clean up file on error
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
 
-    // Provide fallback response
     res.json({
       success: true,
       summary:

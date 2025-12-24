@@ -14,7 +14,6 @@ router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password-token", authController.resetPasswordWithToken);
 
 
-// Example of role-based route
 router.get("/admin-only", authMiddleware, roleMiddleware("admin"), (req, res) => {
   res.json({ message: "Welcome, Admin!" });
 });

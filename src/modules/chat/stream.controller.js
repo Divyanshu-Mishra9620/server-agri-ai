@@ -3,10 +3,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
-/**
- * Stream suggestions from RAG system
- * This endpoint receives agricultural queries and streams AI responses
- */
 export async function streamSuggestion(req, res, next) {
   try {
     const { query, context } = req.body;
@@ -18,13 +14,11 @@ export async function streamSuggestion(req, res, next) {
       });
     }
 
-    // Set headers for Server-Sent Events (SSE)
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+    res.setHeader("X-Accel-Buffering", "no");
 
-    // Build enhanced prompt with context
     let enhancedPrompt = `You are 'Krishi Mitra', an expert agricultural AI assistant for Indian farmers.
 
 User Query: ${query}`;
@@ -51,23 +45,19 @@ Keep the response well-structured and actionable for farmers.`;
       `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`
     );
 
-    // Use Gemini with streaming
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash-exp",
     });
 
     const result = await model.generateContentStream(enhancedPrompt);
 
-    // Stream the response
     for await (const chunk of result.stream) {
       const chunkText = chunk.text();
       if (chunkText) {
-        // Send as SSE format
         res.write(`data: ${JSON.stringify({ content: chunkText })}\n\n`);
       }
     }
 
-    // Send completion signal
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
 
@@ -77,7 +67,6 @@ Keep the response well-structured and actionable for farmers.`;
   } catch (err) {
     console.error("[Stream] Error:", err);
 
-    // Send error through SSE
     res.write(
       `data: ${JSON.stringify({
         error: true,
@@ -88,10 +77,6 @@ Keep the response well-structured and actionable for farmers.`;
     res.end();
   }
 }
-
-/**
- * Get agricultural suggestions (non-streaming fallback)
- */
 export async function getSuggestion(req, res, next) {
   try {
     const { query, context } = req.body;
@@ -103,7 +88,6 @@ export async function getSuggestion(req, res, next) {
       });
     }
 
-    // Build enhanced prompt
     let enhancedPrompt = `You are 'Krishi Mitra', an expert agricultural AI assistant for Indian farmers.
 
 User Query: ${query}`;

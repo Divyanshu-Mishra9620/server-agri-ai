@@ -1,8 +1,6 @@
-// modules/communityChat/communityChat.controller.js
 import * as communityService from "./communityChat.service.js";
 import { validationResult } from "express-validator";
 
-// Get all channels with pagination and filtering
 export const getChannels = async (req, res) => {
   try {
     const {
@@ -39,7 +37,6 @@ export const getChannels = async (req, res) => {
   }
 };
 
-// Get single channel details
 export const getChannel = async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -70,7 +67,6 @@ export const getChannel = async (req, res) => {
   }
 };
 
-// Create new channel
 export const createChannel = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -104,7 +100,6 @@ export const createChannel = async (req, res) => {
   }
 };
 
-// Join a channel
 export const joinChannel = async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -142,7 +137,6 @@ export const joinChannel = async (req, res) => {
   }
 };
 
-// Leave a channel
 export const leaveChannel = async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -164,13 +158,11 @@ export const leaveChannel = async (req, res) => {
   }
 };
 
-// Get channel messages with pagination
 export const getChannelMessages = async (req, res) => {
   try {
     const { channelId } = req.params;
     const { page = 1, limit = 50, before, after } = req.query;
 
-    // Check if user is a member of the channel
     const isMember = await communityService.isChannelMember(
       channelId,
       req.user.id
@@ -205,7 +197,6 @@ export const getChannelMessages = async (req, res) => {
   }
 };
 
-// Send message to channel
 export const sendMessage = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -224,7 +215,6 @@ export const sendMessage = async (req, res) => {
       userId: req.user.id,
     };
 
-    // Check if user is a member of the channel
     const isMember = await communityService.isChannelMember(
       channelId,
       req.user.id
@@ -238,7 +228,6 @@ export const sendMessage = async (req, res) => {
 
     const message = await communityService.sendMessage(messageData);
 
-    // Emit real-time update
     req.app.get("io").to(`channel:${channelId}`).emit("new_message", {
       message,
       channelId,
@@ -259,7 +248,6 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Add reaction to message
 export const addReaction = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -272,7 +260,6 @@ export const addReaction = async (req, res) => {
       emoji
     );
 
-    // Emit real-time update
     const channelId = message.channelId;
     req.app.get("io").to(`channel:${channelId}`).emit("message_reaction", {
       messageId,
@@ -296,7 +283,6 @@ export const addReaction = async (req, res) => {
   }
 };
 
-// Remove reaction from message
 export const removeReaction = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -309,7 +295,6 @@ export const removeReaction = async (req, res) => {
       emoji
     );
 
-    // Emit real-time update
     const channelId = message.channelId;
     req.app.get("io").to(`channel:${channelId}`).emit("message_reaction", {
       messageId,
@@ -333,7 +318,6 @@ export const removeReaction = async (req, res) => {
   }
 };
 
-// Get user's joined channels
 export const getUserChannels = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -354,13 +338,11 @@ export const getUserChannels = async (req, res) => {
   }
 };
 
-// Get channel members
 export const getChannelMembers = async (req, res) => {
   try {
     const { channelId } = req.params;
     const { page = 1, limit = 50, search, role } = req.query;
 
-    // Check if user is a member of the channel
     const isMember = await communityService.isChannelMember(
       channelId,
       req.user.id
@@ -395,7 +377,6 @@ export const getChannelMembers = async (req, res) => {
   }
 };
 
-// Update channel settings (moderators only)
 export const updateChannel = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -410,7 +391,6 @@ export const updateChannel = async (req, res) => {
     const { channelId } = req.params;
     const userId = req.user.id;
 
-    // Check if user is moderator or admin
     const canModerate = await communityService.canModerateChannel(
       channelId,
       userId
@@ -442,7 +422,6 @@ export const updateChannel = async (req, res) => {
   }
 };
 
-// Delete message (author or moderator only)
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -450,7 +429,6 @@ export const deleteMessage = async (req, res) => {
 
     const result = await communityService.deleteMessage(messageId, userId);
 
-    // Emit real-time update
     req.app
       .get("io")
       .to(`channel:${result.channelId}`)

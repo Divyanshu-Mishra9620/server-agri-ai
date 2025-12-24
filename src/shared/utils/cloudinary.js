@@ -13,7 +13,6 @@ export const uploadToCloudinary = (filePath, opts = {}) => {
   return new Promise((resolve, reject) => {
     cloudinary.v2.uploader.upload(filePath, opts, (err, result) => {
       if (err) return reject(err);
-      // remove local file
       fs.unlink(filePath, () => {});
       resolve(result.secure_url);
     });

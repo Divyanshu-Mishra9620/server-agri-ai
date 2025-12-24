@@ -1,4 +1,3 @@
-// modules/chat/chat.routes.js
 import { Router } from "express";
 import {
   chatSuggest,
@@ -14,7 +13,6 @@ import { authMiddleware } from "../../shared/middlewares/authMiddleware.js";
 
 const router = Router();
 
-// New streaming suggestion endpoints
 router.post("/suggestions/suggest-stream", authMiddleware, streamSuggestion);
 router.post("/suggestions/suggest-direct", authMiddleware, getSuggestion);
 

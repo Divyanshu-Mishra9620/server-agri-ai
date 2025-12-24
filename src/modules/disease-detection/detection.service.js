@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-// import Analysis from "./analysis.model.js";
 import Analysis from "./analysis.mode.js";
 import { executeAnalysisPipeline } from "./langraph.pipeline.js";
 import { uploadToCloudinary } from "../../shared/utils/cloudinary.js";
@@ -17,7 +16,6 @@ export const analyzeImage = async ({
   let analysis = null;
 
   try {
-    // Create initial analysis record
     const imageUrlFallback = `${config.frontendUrl?.replace(/\/$/, "") || "http://localhost:3000"}/uploads/${path.basename(filePath)}`;
 
     analysis = await Analysis.create({
@@ -41,7 +39,6 @@ export const analyzeImage = async ({
       ],
     });
 
-    // Upload to Cloudinary if configured
     let imageUrl = imageUrlFallback;
     if (
       config.cloudinaryApiKey &&
@@ -57,7 +54,6 @@ export const analyzeImage = async ({
           ],
         });
 
-        // Update analysis with Cloudinary URL
         analysis.imageUrl = imageUrl;
         await analysis.save();
       } catch (uploadError) {
@@ -65,11 +61,9 @@ export const analyzeImage = async ({
           "Cloudinary upload failed, using local URL:",
           uploadError
         );
-        // Continue with local URL
       }
     }
 
-    // Execute LangGraph pipeline
     const pipelineData = {
       analysisId: analysis._id.toString(),
       imageUrl,
@@ -81,7 +75,6 @@ export const analyzeImage = async ({
     console.log("Starting LangGraph pipeline...");
     const pipelineResult = await executeAnalysisPipeline(pipelineData);
 
-    // Refresh analysis from database to get latest updates
     const updatedAnalysis = await Analysis.findById(analysis._id);
 
     if (!updatedAnalysis) {
@@ -92,7 +85,6 @@ export const analyzeImage = async ({
     console.error("Image analysis failed:", error);
 
     if (analysis) {
-      // Update analysis record with error
       analysis.status = "failed";
       analysis.error = error.message || String(error);
       analysis.processingSteps.push({
@@ -104,7 +96,6 @@ export const analyzeImage = async ({
       await analysis.save();
     }
 
-    // Clean up local file if it exists
     if (filePath && fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
@@ -137,7 +128,7 @@ export const listAnalyses = async (userId = null, limit = 50, offset = 0) => {
     .sort({ createdAt: -1 })
     .limit(limit)
     .skip(offset)
-    .select("-rawResponses -processingSteps"); // Exclude heavy fields for listing
+    .select("-rawResponses -processingSteps");
 
   const total = await Analysis.countDocuments(query);
 
@@ -194,7 +185,6 @@ export const retryFailedAnalysis = async (analysisId, userId = null) => {
     throw new Error("Only failed analyses can be retried");
   }
 
-  // Reset analysis status
   analysis.status = "pending";
   analysis.error = null;
   analysis.processingSteps.push({
@@ -204,7 +194,6 @@ export const retryFailedAnalysis = async (analysisId, userId = null) => {
   });
   await analysis.save();
 
-  // Re-execute pipeline
   const pipelineData = {
     analysisId: analysis._id.toString(),
     imageUrl: analysis.imageUrl,

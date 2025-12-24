@@ -1,4 +1,3 @@
-// modules/communityChat/communityChat.models.js
 import mongoose from "mongoose";
 
 const channelSchema = new mongoose.Schema(
@@ -70,7 +69,6 @@ const channelSchema = new mongoose.Schema(
   }
 );
 
-// Message Schema for community chat messages
 const communityMessageSchema = new mongoose.Schema(
   {
     channelId: {
@@ -160,7 +158,6 @@ const communityMessageSchema = new mongoose.Schema(
   }
 );
 
-// Channel Member Schema
 const channelMemberSchema = new mongoose.Schema(
   {
     channelId: {
@@ -200,7 +197,6 @@ const channelMemberSchema = new mongoose.Schema(
   }
 );
 
-// Analytics Schema for community engagement
 const communityAnalyticsSchema = new mongoose.Schema(
   {
     channelId: {
@@ -234,7 +230,6 @@ const communityAnalyticsSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for better performance
 channelSchema.index({ category: 1, isActive: 1 });
 channelSchema.index({ lastActivity: -1 });
 channelSchema.index({ memberCount: -1 });
@@ -248,7 +243,6 @@ channelMemberSchema.index({ userId: 1 });
 
 communityAnalyticsSchema.index({ channelId: 1, date: 1 }, { unique: true });
 
-// Virtual for reaction counts
 communityMessageSchema.virtual("reactionCounts").get(function () {
   const counts = {};
   this.reactions.forEach((reaction) => {
@@ -257,7 +251,6 @@ communityMessageSchema.virtual("reactionCounts").get(function () {
   return counts;
 });
 
-// Virtual for reply count
 communityMessageSchema.virtual("replyCount").get(function () {
   return this.replies.length;
 });

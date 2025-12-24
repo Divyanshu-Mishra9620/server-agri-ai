@@ -5,10 +5,8 @@ import { authMiddleware as authenticateToken } from "../../shared/middlewares/au
 
 const router = Router();
 
-// Apply authentication middleware to all routes
 router.use(authenticateToken);
 
-// Validation rules
 const createChannelValidation = [
   body("name")
     .trim()
@@ -81,7 +79,6 @@ const updateChannelValidation = [
     .withMessage("Icon must be a string with max 10 characters"),
 ];
 
-// Channel routes
 router.get("/channels", communityController.getChannels);
 router.post(
   "/channels",
@@ -101,7 +98,6 @@ router.put(
   communityController.updateChannel
 );
 
-// Channel membership routes
 router.post(
   "/channels/:channelId/join",
   param("channelId").isMongoId().withMessage("Invalid channel ID"),
@@ -118,7 +114,6 @@ router.get(
   communityController.getChannelMembers
 );
 
-// Message routes
 router.get(
   "/channels/:channelId/messages",
   param("channelId").isMongoId().withMessage("Invalid channel ID"),
@@ -131,7 +126,6 @@ router.post(
   communityController.sendMessage
 );
 
-// Message reaction routes
 router.post(
   "/messages/:messageId/reactions",
   param("messageId").isMongoId().withMessage("Invalid message ID"),
@@ -145,7 +139,6 @@ router.delete(
   communityController.removeReaction
 );
 
-// Message management routes
 router.delete(
   "/messages/:messageId",
   param("messageId").isMongoId().withMessage("Invalid message ID"),

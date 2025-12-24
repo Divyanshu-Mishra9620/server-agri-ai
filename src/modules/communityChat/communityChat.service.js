@@ -1,4 +1,3 @@
-// modules/communityChat/communityChat.service.js
 import {
   CommunityChannel,
   CommunityMessage,
@@ -7,7 +6,6 @@ import {
 } from "./communityChat.models.js";
 import mongoose from "mongoose";
 
-// Get all channels with filtering and pagination
 export const getChannels = async (options) => {
   const {
     page = 1,
@@ -22,7 +20,6 @@ export const getChannels = async (options) => {
   const skip = (page - 1) * limit;
   const sortOrder = order === "desc" ? -1 : 1;
 
-  // Build filter object
   const filter = { isActive: true };
 
   if (category) {
@@ -36,7 +33,6 @@ export const getChannels = async (options) => {
     ];
   }
 
-  // Build sort object
   const sort = {};
   sort[sortBy] = sortOrder;
 
@@ -102,7 +98,6 @@ export const getChannels = async (options) => {
   };
 };
 
-// Get channel by ID with member status
 export const getChannelById = async (channelId, userId) => {
   const channel = await CommunityChannel.aggregate([
     {
@@ -159,26 +154,21 @@ export const getChannelById = async (channelId, userId) => {
   return channel[0] || null;
 };
 
-// Create new channel
 export const createChannel = async (channelData) => {
   const channel = new CommunityChannel(channelData);
   await channel.save();
 
-  // Automatically add creator as admin
   await joinChannel(channel._id, channelData.createdBy, "admin");
 
   return channel;
 };
 
-// Join channel
 export const joinChannel = async (channelId, userId, role = "member") => {
-  // Check if channel exists
   const channel = await CommunityChannel.findById(channelId);
   if (!channel) {
     throw new Error("Channel not found");
   }
 
-  // Check if already a member
   const existingMember = await ChannelMember.findOne({
     channelId,
     userId,
@@ -189,7 +179,6 @@ export const joinChannel = async (channelId, userId, role = "member") => {
     throw new Error("Already a member");
   }
 
-  // Create membership
   const membership = new ChannelMember({
     channelId,
     userId,
@@ -198,7 +187,6 @@ export const joinChannel = async (channelId, userId, role = "member") => {
 
   await membership.save();
 
-  // Update channel member count
   await CommunityChannel.findByIdAndUpdate(channelId, {
     $inc: { memberCount: 1 },
   });
@@ -206,7 +194,6 @@ export const joinChannel = async (channelId, userId, role = "member") => {
   return membership.populate("userId", "name email");
 };
 
-// Leave channel
 export const leaveChannel = async (channelId, userId) => {
   const membership = await ChannelMember.findOneAndUpdate(
     { channelId, userId, isActive: true },
@@ -215,7 +202,6 @@ export const leaveChannel = async (channelId, userId) => {
   );
 
   if (membership) {
-    // Update channel member count
     await CommunityChannel.findByIdAndUpdate(channelId, {
       $inc: { memberCount: -1 },
     });
@@ -224,7 +210,6 @@ export const leaveChannel = async (channelId, userId) => {
   return membership;
 };
 
-// Check if user is a member of channel
 export const isChannelMember = async (channelId, userId) => {
   const membership = await ChannelMember.findOne({
     channelId,
@@ -235,13 +220,11 @@ export const isChannelMember = async (channelId, userId) => {
   return !!membership;
 };
 
-// Get channel messages with pagination
 export const getChannelMessages = async (options) => {
   const { channelId, page = 1, limit = 50, before, after } = options;
 
   const skip = (page - 1) * limit;
 
-  // Build filter
   const filter = {
     channelId,
     isDeleted: false,
@@ -267,7 +250,6 @@ export const getChannelMessages = async (options) => {
     CommunityMessage.countDocuments(filter),
   ]);
 
-  // Reverse to show oldest first
   messages.reverse();
 
   return {
@@ -282,12 +264,10 @@ export const getChannelMessages = async (options) => {
   };
 };
 
-// Send message to channel
 export const sendMessage = async (messageData) => {
   const message = new CommunityMessage(messageData);
   await message.save();
 
-  // Update channel stats
   await Promise.all([
     CommunityChannel.findByIdAndUpdate(messageData.channelId, {
       $inc: { messageCount: 1 },
@@ -308,26 +288,22 @@ export const sendMessage = async (messageData) => {
   ]);
 };
 
-// Add reaction to message
 export const addReaction = async (messageId, userId, emoji) => {
   const message = await CommunityMessage.findById(messageId);
   if (!message) {
     throw new Error("Message not found");
   }
 
-  // Remove existing reaction from same user for same emoji
   message.reactions = message.reactions.filter(
     (r) => !(r.userId.toString() === userId.toString() && r.emoji === emoji)
   );
 
-  // Add new reaction
   message.reactions.push({ userId, emoji });
   await message.save();
 
   return message;
 };
 
-// Remove reaction from message
 export const removeReaction = async (messageId, userId, emoji) => {
   const message = await CommunityMessage.findById(messageId);
   if (!message) {
@@ -342,7 +318,6 @@ export const removeReaction = async (messageId, userId, emoji) => {
   return message;
 };
 
-// Get user's joined channels
 export const getUserChannels = async (userId) => {
   const channels = await ChannelMember.aggregate([
     {
@@ -367,22 +342,7 @@ export const getUserChannels = async (userId) => {
         "channel.isActive": true,
       },
     },
-    //    {
-    //   $project: {
-    //     _id: 0,
-    //     channelId: '$channel._id',
-    //     name: '$channel.name',
-    //     description: '$channel.description',
-    //     category: '$channel.category',
-    //     icon: '$channel.icon',
-    //     memberCount: '$channel.memberCount',
-    //     messageCount: '$channel.messageCount',
-    //     lastActivity: '$channel.lastActivity',
-    //     role: '$role',
-    //     joinedAt: '$joinedAt',
-    //     lastSeen: '$lastSeen',
-    //     unreadCount: 0 // TODO: Calculate actual unread count
-    //   }
+
     {
       $project: {
         channelId: "$channel._id",
@@ -396,7 +356,7 @@ export const getUserChannels = async (userId) => {
         role: "$role",
         joinedAt: "$joinedAt",
         lastSeen: "$lastSeen",
-        unreadCount: { $literal: 0 }, // constant field ✅
+        unreadCount: { $literal: 0 },
       },
     },
     {
@@ -407,13 +367,11 @@ export const getUserChannels = async (userId) => {
   return channels;
 };
 
-// Get channel members with pagination
 export const getChannelMembers = async (options) => {
   const { channelId, page = 1, limit = 50, search, role } = options;
 
   const skip = (page - 1) * limit;
 
-  // Build filter
   const filter = {
     channelId,
     isActive: true,
@@ -438,7 +396,6 @@ export const getChannelMembers = async (options) => {
     },
   ];
 
-  // Add search filter if provided
   if (search) {
     pipeline.push({
       $match: {
@@ -450,7 +407,6 @@ export const getChannelMembers = async (options) => {
     });
   }
 
-  // Add pagination
   pipeline.push(
     { $sort: { joinedAt: -1 } },
     { $skip: skip },
@@ -488,7 +444,6 @@ export const getChannelMembers = async (options) => {
   };
 };
 
-// Check if user can moderate channel
 export const canModerateChannel = async (channelId, userId) => {
   const membership = await ChannelMember.findOne({
     channelId,
@@ -504,7 +459,6 @@ export const canModerateChannel = async (channelId, userId) => {
   return !!membership || isCreator;
 };
 
-// Update channel
 export const updateChannel = async (channelId, updateData) => {
   const allowedUpdates = ["name", "description", "icon"];
   const filteredData = {};
@@ -524,7 +478,6 @@ export const updateChannel = async (channelId, updateData) => {
   return channel;
 };
 
-// Delete message
 export const deleteMessage = async (messageId, userId) => {
   const message = await CommunityMessage.findById(messageId);
 
@@ -532,7 +485,6 @@ export const deleteMessage = async (messageId, userId) => {
     throw new Error("Message not found");
   }
 
-  // Check if user is author or can moderate
   const isAuthor = message.userId.toString() === userId.toString();
   const canModerate = await canModerateChannel(message.channelId, userId);
 
@@ -540,11 +492,9 @@ export const deleteMessage = async (messageId, userId) => {
     throw new Error("Unauthorized");
   }
 
-  // Soft delete
   message.isDeleted = true;
   await message.save();
 
-  // Update channel message count
   await CommunityChannel.findByIdAndUpdate(message.channelId, {
     $inc: { messageCount: -1 },
   });
@@ -552,9 +502,7 @@ export const deleteMessage = async (messageId, userId) => {
   return { channelId: message.channelId };
 };
 
-// Get channel analytics (for moderators/admins)
 export const getChannelAnalytics = async (channelId, userId, days = 7) => {
-  // Check if user can access analytics
   const canModerate = await canModerateChannel(channelId, userId);
   if (!canModerate) {
     throw new Error("Unauthorized");
@@ -575,7 +523,6 @@ export const getChannelAnalytics = async (channelId, userId, days = 7) => {
     },
   ]);
 
-  // Get overall stats
   const overallStats = await CommunityMessage.aggregate([
     {
       $match: {
@@ -610,23 +557,19 @@ export const getChannelAnalytics = async (channelId, userId, days = 7) => {
   };
 };
 
-// Search messages across channels
 export const searchMessages = async (query, userId, options = {}) => {
   const { channelId, page = 1, limit = 20 } = options;
 
   const skip = (page - 1) * limit;
 
-  // Get user's channels if no specific channel provided
   let channelFilter = {};
   if (channelId) {
-    // Check if user is member of specific channel
     const isMember = await isChannelMember(channelId, userId);
     if (!isMember) {
       throw new Error("Access denied");
     }
     channelFilter.channelId = mongoose.Types.ObjectId(channelId);
   } else {
-    // Get all channels user is member of
     const userChannels = await ChannelMember.find({
       userId,
       isActive: true,
@@ -665,7 +608,6 @@ export const searchMessages = async (query, userId, options = {}) => {
   };
 };
 
-// Pin/Unpin message
 export const toggleMessagePin = async (messageId, userId) => {
   const message = await CommunityMessage.findById(messageId);
 
@@ -673,7 +615,6 @@ export const toggleMessagePin = async (messageId, userId) => {
     throw new Error("Message not found");
   }
 
-  // Check if user can moderate
   const canModerate = await canModerateChannel(message.channelId, userId);
   if (!canModerate) {
     throw new Error("Unauthorized");
@@ -685,9 +626,7 @@ export const toggleMessagePin = async (messageId, userId) => {
   return message;
 };
 
-// Get pinned messages for a channel
 export const getPinnedMessages = async (channelId, userId) => {
-  // Check if user is member
   const isMember = await isChannelMember(channelId, userId);
   if (!isMember) {
     throw new Error("Access denied");

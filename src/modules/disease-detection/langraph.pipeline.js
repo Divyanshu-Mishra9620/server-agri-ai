@@ -2,7 +2,6 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { createProvider, analyzeWithFallback } from "./ai-providers.js";
 import Analysis from "./analysis.mode.js";
 
-// Define the state structure for our pipeline
 class AnalysisState {
   constructor(data = {}) {
     this.analysisId = data.analysisId;
@@ -11,13 +10,11 @@ class AnalysisState {
     this.location = data.location;
     this.provider = data.provider || "groq";
 
-    // Processing results
     this.imageAnalysis = data.imageAnalysis || null;
     this.diseaseDetection = data.diseaseDetection || null;
     this.recommendations = data.recommendations || null;
     this.finalResult = data.finalResult || null;
 
-    // Error tracking
     this.errors = data.errors || [];
     this.currentStep = data.currentStep || "initialization";
     this.stepResults = data.stepResults || {};
@@ -33,14 +30,11 @@ class AnalysisState {
   }
 }
 
-// Step 1: Initialize and validate inputs
 async function initializeAnalysis(state) {
   try {
-    // Validate inputs
     if (!state.analysisId) throw new Error("Analysis ID is required");
     if (!state.imageUrl) throw new Error("Image URL is required");
 
-    // Update analysis status
     await Analysis.findByIdAndUpdate(state.analysisId, {
       status: "processing",
       $push: {
@@ -63,10 +57,8 @@ async function initializeAnalysis(state) {
   }
 }
 
-// Step 2: Perform image analysis with fallback
 async function performImageAnalysis(state) {
   try {
-    // Use fallback analysis that tries multiple providers
     const result = await analyzeWithFallback(
       state.imageUrl,
       state.cropType,
@@ -76,7 +68,6 @@ async function performImageAnalysis(state) {
 
     console.log("Image analysis result:", JSON.stringify(result, null, 2));
 
-    // Validate the result has required fields
     if (!result.disease) {
       throw new Error(
         "AI provider returned incomplete analysis - missing disease information"
@@ -90,10 +81,8 @@ async function performImageAnalysis(state) {
       disease: result.disease,
       confidence: result.confidence,
     });
-
-    // Update database
     await Analysis.findByIdAndUpdate(state.analysisId, {
-      aiProvider: result.provider, // Update with actual provider used
+      aiProvider: result.provider,
       $push: {
         processingSteps: {
           step: "imageAnalysis",
@@ -129,7 +118,6 @@ async function performImageAnalysis(state) {
   }
 }
 
-// Step 3: Process disease detection results
 async function processDiseaseDetection(state) {
   console.log("Processing disease detection results");
 
@@ -142,7 +130,6 @@ async function processDiseaseDetection(state) {
       );
     }
 
-    // Check if this is an invalid image
     if (analysis.disease === "Invalid image") {
       const detection = {
         disease: "Invalid image",
@@ -177,17 +164,15 @@ async function processDiseaseDetection(state) {
       return state;
     }
 
-    // Enhanced disease detection logic for valid plant images
     const detection = {
       disease: analysis.disease,
-      confidence: Math.max(0, Math.min(1, analysis.confidence || 0)), // Ensure 0-1 range
+      confidence: Math.max(0, Math.min(1, analysis.confidence || 0)),
       severity: analysis.severity || "medium",
       symptoms: Array.isArray(analysis.symptoms) ? analysis.symptoms : [],
       analysisProvider: analysis.provider || state.provider,
       isInvalidImage: false,
     };
 
-    // Apply business logic for confidence thresholds
     if (detection.confidence < 0.3) {
       detection.disease = "Inconclusive - requires expert review";
       detection.severity = "unknown";
@@ -237,7 +222,6 @@ async function processDiseaseDetection(state) {
   }
 }
 
-// Step 4: Generate recommendations
 async function generateRecommendations(state) {
   console.log("Generating treatment recommendations");
 
@@ -249,7 +233,6 @@ async function generateRecommendations(state) {
       throw new Error("No image analysis available for recommendations");
     }
 
-    // FIXED: Check if this is an invalid image and return empty recommendations
     if (detection?.isInvalidImage || analysis.disease === "Invalid image") {
       const recommendations = {
         treatment: [],
@@ -284,7 +267,6 @@ async function generateRecommendations(state) {
       return state;
     }
 
-    // Process recommendations from AI analysis for valid plant images
     const recommendations = {
       treatment: enhanceTreatments(
         analysis.treatment || [],
@@ -299,7 +281,6 @@ async function generateRecommendations(state) {
       preventiveMeasures: analysis.prevention || [],
     };
 
-    // Add fallback recommendations if arrays are empty (only for valid plant images)
     if (recommendations.treatment.length === 0) {
       recommendations.treatment.push({
         method: "General Treatment",
@@ -373,12 +354,10 @@ async function generateRecommendations(state) {
   }
 }
 
-// Helper method to enhance treatments
 function enhanceTreatments(treatments, location, cropType) {
   if (!Array.isArray(treatments)) return [];
 
   return treatments.map((treatment) => {
-    // Handle both object and string formats
     if (typeof treatment === "string") {
       treatment = {
         method: treatment,
@@ -399,7 +378,6 @@ function enhanceTreatments(treatments, location, cropType) {
   });
 }
 
-// Helper method to filter fertilizers by location
 function filterFertilizers(fertilizers, location) {
   if (!Array.isArray(fertilizers)) return [];
 
@@ -412,7 +390,6 @@ function filterFertilizers(fertilizers, location) {
   });
 }
 
-// Step 5: Finalize results
 async function finalizeResults(state) {
   console.log("Finalizing analysis results");
 
@@ -438,7 +415,6 @@ async function finalizeResults(state) {
 
     state.finalResult = finalResult;
 
-    // Final database update with complete data
     await Analysis.findByIdAndUpdate(state.analysisId, {
       status: "completed",
       aiProvider: state.diseaseDetection.analysisProvider || state.provider,
@@ -479,7 +455,6 @@ async function finalizeResults(state) {
   }
 }
 
-// Error handler
 async function handleError(state) {
   const latestError = state.errors[state.errors.length - 1];
 
@@ -502,13 +477,11 @@ async function handleError(state) {
   return state;
 }
 
-// FIXED: Routing function to determine next step
 function routeAnalysis(state) {
   if (state.errors && state.errors.length > 0) {
     return "handleError";
   }
 
-  // Route based on current step
   switch (state.currentStep) {
     case "initialization":
       return "performImageAnalysis";
@@ -543,7 +516,6 @@ export function createAnalysisPipeline() {
     },
   });
 
-  // Helper to create nodes with consistent error handling
   function createNode(nodeName, stepFunction, stepKey) {
     workflow.addNode(nodeName, async (state) => {
       const analysisState = new AnalysisState(state);
@@ -551,7 +523,7 @@ export function createAnalysisPipeline() {
         const result = await stepFunction(analysisState);
         return {
           ...state,
-          currentStep: stepKey, // MUST match routeAnalysis keys
+          currentStep: stepKey,
           imageAnalysis: result.imageAnalysis || state.imageAnalysis,
           diseaseDetection: result.diseaseDetection || state.diseaseDetection,
           recommendations: result.recommendations || state.recommendations,
@@ -571,7 +543,6 @@ export function createAnalysisPipeline() {
     });
   }
 
-  // Add all nodes with correct currentStep
   createNode("initializeAnalysis", initializeAnalysis, "initialization");
   createNode("performImageAnalysis", performImageAnalysis, "imageAnalysis");
   createNode(
@@ -586,7 +557,6 @@ export function createAnalysisPipeline() {
   );
   createNode("finalizeResults", finalizeResults, "finalization");
 
-  // Error handling node
   workflow.addNode("handleError", async (state) => {
     const analysisState = new AnalysisState(state);
     await handleError(analysisState);
@@ -596,10 +566,8 @@ export function createAnalysisPipeline() {
     };
   });
 
-  // Entry point
   workflow.setEntryPoint("initializeAnalysis");
 
-  // Conditional routing with edges
   const edges = [
     [
       "initializeAnalysis",
@@ -633,7 +601,6 @@ export function createAnalysisPipeline() {
     workflow.addConditionalEdges(node, routeAnalysis, mapping)
   );
 
-  // Direct edge from handleError to END
   workflow.addEdge("handleError", END);
 
   return workflow.compile();
@@ -700,7 +667,6 @@ export async function executeAnalysisPipeline(analysisData) {
   } catch (error) {
     console.error("Pipeline execution failed:", error);
 
-    // Update database with error status
     try {
       await Analysis.findByIdAndUpdate(analysisData.analysisId, {
         status: "failed",

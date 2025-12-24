@@ -15,23 +15,19 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       minlength: 5,
-      maxlength: 100
+      maxlength: 100,
     },
     password: {
       type: String,
       required: true,
       trim: true,
       minlength: 6,
-      maxlength: 100
+      maxlength: 100,
     },
     role: {
       type: String,
-      enum: [
-        'admin',
-        'user',
-        'support'
-      ],
-      default: 'user'
+      enum: ["admin", "user", "support"],
+      default: "user",
     },
     isActive: {
       type: Boolean,
@@ -39,16 +35,13 @@ const userSchema = new mongoose.Schema(
     },
     languague: {
       type: String,
-      enum: [
-        'english',
-        'hindi',
-      ],
-      default: 'english'
+      enum: ["english", "hindi"],
+      default: "english",
     },
     state: {
       type: String,
       trim: true,
-      required: true
+      required: true,
     },
     district: {
       type: String,
@@ -60,21 +53,21 @@ const userSchema = new mongoose.Schema(
       trim: true,
       required: true,
       minlength: 10,
-      maxlength: 200
+      maxlength: 200,
     },
     phone: {
       type: String,
       trim: true,
       minlength: 10,
-      maxlength: 15
+      maxlength: 15,
     },
     dob: {
       type: Date,
-      required: true
+      required: true,
     },
     refreshToken: {
       type: String,
-      default: null
+      default: null,
     },
     resetPasswordToken: {
       type: String,
@@ -88,11 +81,10 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Calculate the age of the user
-userSchema.virtual('age').get(function () {
+userSchema.virtual("age").get(function () {
   const ageDifMs = Date.now() - this.dob.getTime();
   const ageDate = new Date(ageDifMs);
   return Math.abs(ageDate.getUTCFullYear() - 1970);
-})
+});
 
 export default mongoose.model("User", userSchema);
