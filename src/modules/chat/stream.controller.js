@@ -1,4 +1,5 @@
 import config from "../../config/env.js";
+import fetch from "node-fetch";
 // Removed Gemini - using OpenRouter instead to avoid quota limits
 // import { GoogleGenerativeAI } from "@google/generative-ai";
 // const genAI = new GoogleGenerativeAI(config.geminiApiKey);
@@ -19,30 +20,44 @@ export async function streamSuggestion(req, res, next) {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    let enhancedPrompt = `You are 'Krishi Mitra', an expert agricultural AI assistant for Indian farmers.
-
-User Query: ${query}`;
-
+    // Build context string if provided
+    let contextStr = "";
     if (context) {
-      enhancedPrompt += `\n\nAdditional Context:`;
-      if (context.location)
-        enhancedPrompt += `\n- Location: ${context.location}`;
-      if (context.crop) enhancedPrompt += `\n- Crop: ${context.crop}`;
-      if (context.soilType)
-        enhancedPrompt += `\n- Soil Type: ${context.soilType}`;
-      if (context.season) enhancedPrompt += `\n- Season: ${context.season}`;
+      const contextParts = [];
+      if (context.location) contextParts.push(`Location: ${context.location}`);
+      if (context.crop) contextParts.push(`Crop: ${context.crop}`);
+      if (context.soilType) contextParts.push(`Soil: ${context.soilType}`);
+      if (context.season) contextParts.push(`Season: ${context.season}`);
+      if (contextParts.length > 0) {
+        contextStr = `\n\nContext: ${contextParts.join(" | ")}`;
+      }
     }
 
-    enhancedPrompt += `\n\nProvide a comprehensive, practical response in simple language. Include:
-1. Direct answer to the query
-2. Specific recommendations or steps
-3. Important warnings or precautions (if applicable)
-4. Local practices when relevant
+    let enhancedPrompt = `You are 'Krishi Mitra' (कृषि मित्र), a helpful agricultural AI assistant for Indian farmers.
 
-Keep the response well-structured and actionable for farmers.`;
+Farmer's Question: ${query}${contextStr}
+
+Instructions:
+• Give a CONCISE, practical answer (3-5 short paragraphs maximum)
+• Use simple language that farmers understand
+• Include specific steps or recommendations
+• Mention any critical warnings briefly
+• If relevant, add local Indian farming practices
+
+Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
 
     console.log(
       `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`
+    );
+
+    // Check if API key is available
+    if (!config.openrouterApiKey) {
+      console.error("[Stream] ERROR: OpenRouter API key is not configured!");
+      throw new Error("OpenRouter API key is not configured");
+    }
+
+    console.log(
+      `[Stream] Using OpenRouter API with model: google/gemini-2.0-flash-exp:free`
     );
 
     // Use OpenRouter API instead of Gemini (no quota limits with free models)
@@ -60,24 +75,45 @@ Keep the response well-structured and actionable for farmers.`;
           model: "google/gemini-2.0-flash-exp:free", // Free model
           messages: [{ role: "user", content: enhancedPrompt }],
           stream: true,
+          max_tokens: 800, // Limit response length (shorter responses)
+          temperature: 0.7, // Balanced creativity and consistency
         }),
       }
     );
 
     if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`[Stream] OpenRouter API Error:`, {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody,
+      });
       throw new Error(
-        `OpenRouter API error: ${response.status} ${response.statusText}`
+        `OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`
       );
     }
+
+    console.log(
+      `[Stream] Successfully connected to OpenRouter, starting stream...`
+    );
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
+    let chunkCount = 0;
+
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        console.log(`[Stream] Stream ended after ${chunkCount} chunks`);
+        break;
+      }
 
+      chunkCount++;
       const chunk = decoder.decode(value);
+      console.log(
+        `[Stream] Received chunk #${chunkCount}, size: ${chunk.length} bytes`
+      );
       const lines = chunk.split("\n").filter((line) => line.trim() !== "");
 
       for (const line of lines) {
@@ -90,8 +126,11 @@ Keep the response well-structured and actionable for farmers.`;
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              // Flush the response to ensure immediate delivery
+              if (res.flush) res.flush();
             }
           } catch (e) {
+            console.error("[Stream] Error parsing chunk:", e.message);
             // Skip invalid JSON
           }
         }
@@ -105,7 +144,16 @@ Keep the response well-structured and actionable for farmers.`;
       `[Stream] Completed suggestion stream for user: ${req.user?.id || "anonymous"}`
     );
   } catch (err) {
-    console.error("[Stream] Error:", err);
+    console.error("[Stream] Error Details:", {
+      message: err.message,
+      stack: err.stack,
+      name: err.name,
+    });
+
+    // Make sure response hasn't ended yet
+    if (!res.headersSent) {
+      res.setHeader("Content-Type", "text/event-stream");
+    }
 
     res.write(
       `data: ${JSON.stringify({
@@ -128,27 +176,31 @@ export async function getSuggestion(req, res, next) {
       });
     }
 
-    let enhancedPrompt = `You are 'Krishi Mitra', an expert agricultural AI assistant for Indian farmers.
-
-User Query: ${query}`;
-
+    // Build context string if provided (same as streaming version)
+    let contextStr = "";
     if (context) {
-      enhancedPrompt += `\n\nAdditional Context:`;
-      if (context.location)
-        enhancedPrompt += `\n- Location: ${context.location}`;
-      if (context.crop) enhancedPrompt += `\n- Crop: ${context.crop}`;
-      if (context.soilType)
-        enhancedPrompt += `\n- Soil Type: ${context.soilType}`;
-      if (context.season) enhancedPrompt += `\n- Season: ${context.season}`;
+      const contextParts = [];
+      if (context.location) contextParts.push(`Location: ${context.location}`);
+      if (context.crop) contextParts.push(`Crop: ${context.crop}`);
+      if (context.soilType) contextParts.push(`Soil: ${context.soilType}`);
+      if (context.season) contextParts.push(`Season: ${context.season}`);
+      if (contextParts.length > 0) {
+        contextStr = `\n\nContext: ${contextParts.join(" | ")}`;
+      }
     }
 
-    enhancedPrompt += `\n\nProvide a comprehensive, practical response in simple language. Include:
-1. Direct answer to the query
-2. Specific recommendations or steps
-3. Important warnings or precautions (if applicable)
-4. Local practices when relevant
+    let enhancedPrompt = `You are 'Krishi Mitra' (कृषि मित्र), a helpful agricultural AI assistant for Indian farmers.
 
-Keep the response well-structured and actionable for farmers.`;
+Farmer's Question: ${query}${contextStr}
+
+Instructions:
+• Give a CONCISE, practical answer (3-5 short paragraphs maximum)
+• Use simple language that farmers understand
+• Include specific steps or recommendations
+• Mention any critical warnings briefly
+• If relevant, add local Indian farming practices
+
+Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
 
     // Use OpenRouter API instead of Gemini
     const response = await fetch(
@@ -164,6 +216,8 @@ Keep the response well-structured and actionable for farmers.`;
         body: JSON.stringify({
           model: "google/gemini-2.0-flash-exp:free",
           messages: [{ role: "user", content: enhancedPrompt }],
+          max_tokens: 800, // Limit response length
+          temperature: 0.7, // Balanced creativity
         }),
       }
     );
