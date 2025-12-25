@@ -1,7 +1,7 @@
 import config from "../../config/env.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+// Removed Gemini - using OpenRouter instead to avoid quota limits
+// import { GoogleGenerativeAI } from "@google/generative-ai";
+// const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
 export async function streamSuggestion(req, res, next) {
   try {
@@ -45,16 +45,56 @@ Keep the response well-structured and actionable for farmers.`;
       `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`
     );
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
-    });
+    // Use OpenRouter API instead of Gemini (no quota limits with free models)
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.openrouterApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": config.frontendUrl,
+          "X-Title": "Krishi Mitra",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.0-flash-exp:free", // Free model
+          messages: [{ role: "user", content: enhancedPrompt }],
+          stream: true,
+        }),
+      }
+    );
 
-    const result = await model.generateContentStream(enhancedPrompt);
+    if (!response.ok) {
+      throw new Error(
+        `OpenRouter API error: ${response.status} ${response.statusText}`
+      );
+    }
 
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      if (chunkText) {
-        res.write(`data: ${JSON.stringify({ content: chunkText })}\n\n`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              res.write(`data: ${JSON.stringify({ content })}\n\n`);
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
       }
     }
 
@@ -110,13 +150,30 @@ User Query: ${query}`;
 
 Keep the response well-structured and actionable for farmers.`;
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
-    });
+    // Use OpenRouter API instead of Gemini
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.openrouterApiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": config.frontendUrl,
+          "X-Title": "Krishi Mitra",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.0-flash-exp:free",
+          messages: [{ role: "user", content: enhancedPrompt }],
+        }),
+      }
+    );
 
-    const result = await model.generateContent(enhancedPrompt);
-    const response = await result.response;
-    const text = response.text();
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices[0]?.message?.content || "No response generated";
 
     res.json({
       success: true,
