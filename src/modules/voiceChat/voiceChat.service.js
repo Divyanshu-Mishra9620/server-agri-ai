@@ -27,7 +27,8 @@ export const processAudioData = async (
   userId,
   sessionId,
   audioData,
-  language
+  language,
+  mimetype = "audio/webm"
 ) => {
   try {
     let voiceChat = await VoiceChat.findOne({
@@ -40,7 +41,7 @@ export const processAudioData = async (
       throw new Error("Voice session not found or expired");
     }
 
-    const transcription = await transcribeAudio(audioData, language);
+    const transcription = await transcribeAudio(audioData, language, mimetype);
 
     if (!transcription || transcription.trim() === "") {
       throw new Error("Could not understand the audio. Please speak clearly.");

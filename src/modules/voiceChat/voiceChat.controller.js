@@ -82,11 +82,14 @@ export const processVoiceQuery = async (req, res) => {
       `[Voice] Processing audio: ${audioBuffer.length} bytes for session: ${sessionId}`
     );
 
+    const mimetype = req?.file?.mimetype || "audio/webm";
+
     const result = await processAudioData(
       userId,
       sessionId,
       audioData,
-      language
+      language,
+      mimetype
     );
 
     res.json({

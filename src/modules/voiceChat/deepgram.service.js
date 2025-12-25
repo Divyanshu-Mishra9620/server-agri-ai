@@ -3,7 +3,11 @@ import config from "../../config/env.js";
 
 const deepgram = createClient(config.DEEPGRAM_API_KEY);
 
-export const transcribeAudio = async (audioData, language = "hi") => {
+export const transcribeAudio = async (
+  audioData,
+  language = "hi",
+  mimetype = "audio/webm"
+) => {
   try {
     const audioBuffer = Buffer.from(audioData, "base64");
 
@@ -12,7 +16,7 @@ export const transcribeAudio = async (audioData, language = "hi") => {
     }
 
     console.log(
-      `[Deepgram] Transcribing audio: ${audioBuffer.length} bytes, language: ${language}`
+      `[Deepgram] Transcribing audio: ${audioBuffer.length} bytes, language: ${language}, mimetype: ${mimetype}`
     );
 
     const transcriptionOptions = {
@@ -21,6 +25,7 @@ export const transcribeAudio = async (audioData, language = "hi") => {
       punctuate: true,
       detect_language: true,
       filler_words: false,
+      utterances: false,
     };
 
     try {
