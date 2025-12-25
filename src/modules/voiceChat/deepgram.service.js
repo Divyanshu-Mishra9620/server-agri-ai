@@ -7,12 +7,20 @@ export const transcribeAudio = async (audioData, language = "hi") => {
   try {
     const audioBuffer = Buffer.from(audioData, "base64");
 
+    if (audioBuffer.length < 100) {
+      throw new Error("Audio too short. Please record for at least 1 second.");
+    }
+
+    console.log(
+      `[Deepgram] Transcribing audio: ${audioBuffer.length} bytes, language: ${language}`
+    );
+
     const transcriptionOptions = {
-      language: language === "hindi" ? "hi" : "en-IN",
       model: "nova-2",
       smart_format: true,
       punctuate: true,
-      alternatives: 1,
+      detect_language: true,
+      filler_words: false,
     };
 
     try {
@@ -21,44 +29,58 @@ export const transcribeAudio = async (audioData, language = "hi") => {
         transcriptionOptions
       );
 
+      console.log("[Deepgram] Raw result:", JSON.stringify(result, null, 2));
+
       const transcript =
         result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+      const confidence =
+        result?.results?.channels?.[0]?.alternatives?.[0]?.confidence;
+      const detectedLang = result?.results?.channels?.[0]?.detected_language;
+
+      console.log(
+        `[Deepgram] Transcript: "${transcript}", Confidence: ${confidence}, Detected Lang: ${detectedLang}`
+      );
+
       if (!transcript || transcript.trim() === "") {
+        console.error("[Deepgram] No transcript found in result");
         throw new Error(
           "No speech detected in audio. Please speak clearly into the microphone."
         );
       }
 
-      const confidence =
-        result?.results?.channels?.[0]?.alternatives?.[0]?.confidence;
-      console.log(`Transcription confidence (nova-2): ${confidence}`);
-
       return transcript.trim();
     } catch (err) {
-      console.warn("Falling back to general model due to error:", err.message);
+      console.warn(
+        "[Deepgram] Primary model failed, trying base model:",
+        err.message
+      );
 
       const { result } = await deepgram.listen.prerecorded.transcribeFile(
         audioBuffer,
         {
-          language: language === "hindi" ? "hi" : "en-IN",
-          model: "general",
-          punctuate: true,
+          model: "base",
           smart_format: true,
         }
+      );
+
+      console.log(
+        "[Deepgram] Base model result:",
+        JSON.stringify(result, null, 2)
       );
 
       const transcript =
         result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
       if (!transcript || transcript.trim() === "") {
+        console.error("[Deepgram] Base model also returned empty transcript");
         throw new Error(
-          "No speech detected in audio. Please speak clearly into the microphone."
+          "No speech detected in audio. Please speak clearly and ensure your microphone is working."
         );
       }
 
       return transcript.trim();
     }
   } catch (error) {
-    console.error("Error transcribing audio:", error);
+    console.error("[Deepgram] Error transcribing audio:", error);
     throw new Error(`Transcription failed: ${error.message}`);
   }
 };
