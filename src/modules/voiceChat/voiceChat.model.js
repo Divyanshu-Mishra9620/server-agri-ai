@@ -51,10 +51,9 @@ const voiceChatSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 voiceChatSchema.index({ userId: 1, createdAt: -1 });
-voiceChatSchema.index({ sessionId: 1 });
 
 export default mongoose.model("VoiceChat", voiceChatSchema);

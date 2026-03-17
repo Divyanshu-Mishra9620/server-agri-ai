@@ -66,11 +66,10 @@ const conversationSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 conversationSchema.index({ userId: 1, lastActivity: -1 });
-conversationSchema.index({ sessionId: 1 });
 
 conversationSchema.pre("save", function (next) {
   if (this.isModified("messages")) {
@@ -112,7 +111,7 @@ const feedbackSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const analyticsSchema = new mongoose.Schema(
@@ -152,7 +151,7 @@ const analyticsSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 analyticsSchema.index({ userId: 1, createdAt: -1 });
@@ -208,7 +207,7 @@ const userPreferencesSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 export const Conversation = mongoose.model("Conversation", conversationSchema);
@@ -216,5 +215,5 @@ export const Feedback = mongoose.model("Feedback", feedbackSchema);
 export const Analytics = mongoose.model("Analytics", analyticsSchema);
 export const UserPreferences = mongoose.model(
   "UserPreferences",
-  userPreferencesSchema
+  userPreferencesSchema,
 );

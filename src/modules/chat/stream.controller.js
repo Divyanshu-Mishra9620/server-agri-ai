@@ -1,8 +1,5 @@
 import config from "../../config/env.js";
 import fetch from "node-fetch";
-// Removed Gemini - using OpenRouter instead to avoid quota limits
-// import { GoogleGenerativeAI } from "@google/generative-ai";
-// const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
 export async function streamSuggestion(req, res, next) {
   try {
@@ -20,7 +17,6 @@ export async function streamSuggestion(req, res, next) {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    // Build context string if provided
     let contextStr = "";
     if (context) {
       const contextParts = [];
@@ -47,7 +43,7 @@ Instructions:
 Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
 
     console.log(
-      `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`
+      `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`,
     );
 
     res.write(`data: ${JSON.stringify({ status: "connecting" })}\n\n`);
@@ -59,19 +55,18 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         `data: ${JSON.stringify({
           error: true,
           message: "API key not configured",
-        })}\n\n`
+        })}\n\n`,
       );
       res.end();
       return;
     }
 
     console.log(
-      `[Stream] Using OpenRouter API with model: google/gemini-2.0-flash-exp:free`
+      `[Stream] Using OpenRouter API with model: google/gemini-2.0-flash-exp:free`,
     );
 
-    // Use OpenRouter API with timeout to prevent hanging
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     let response;
     try {
@@ -84,11 +79,11 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
           "X-Title": "Krishi Mitra",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.0-flash-exp:free", // Free model
+          model: "google/gemini-2.0-flash-exp:free",
           messages: [{ role: "user", content: enhancedPrompt }],
           stream: true,
-          max_tokens: 800, // Limit response length (shorter responses)
-          temperature: 0.7, // Balanced creativity and consistency
+          max_tokens: 800,
+          temperature: 0.7,
         }),
         signal: controller.signal,
       });
@@ -102,7 +97,7 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
             fetchErr.name === "AbortError"
               ? "Request timeout. Please try again."
               : "Connection failed. Please try again.",
-        })}\n\n`
+        })}\n\n`,
       );
       res.end();
       return;
@@ -118,30 +113,27 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         body: errorBody,
       });
       throw new Error(
-        `OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`
+        `OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`,
       );
     }
 
     console.log(
-      `[Stream] Successfully connected to OpenRouter, starting stream...`
+      `[Stream] Successfully connected to OpenRouter, starting stream...`,
     );
 
-    // Process the stream using async iteration
     let buffer = "";
     let chunkCount = 0;
 
     try {
-      // node-fetch v3 body is async iterable
       for await (const chunk of response.body) {
         chunkCount++;
         buffer += chunk.toString();
         console.log(
-          `[Stream] Received chunk #${chunkCount}, size: ${chunk.length} bytes`
+          `[Stream] Received chunk #${chunkCount}, size: ${chunk.length} bytes`,
         );
 
-        // Process complete lines
         const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           if (line.trim() === "") continue;
@@ -154,23 +146,20 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
                 res.write(`data: ${JSON.stringify({ content })}\n\n`);
-                // Flush the response to ensure immediate delivery
                 if (res.flush) res.flush();
               }
             } catch (e) {
               console.error("[Stream] Error parsing chunk:", e.message);
-              // Skip invalid JSON
             }
           }
         }
       }
 
-      // Stream completed successfully
       console.log(`[Stream] Stream ended after ${chunkCount} chunks`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
       console.log(
-        `[Stream] Completed suggestion stream for user: ${req.user?.id || "anonymous"}`
+        `[Stream] Completed suggestion stream for user: ${req.user?.id || "anonymous"}`,
       );
     } catch (streamErr) {
       console.error("[Stream] Stream iteration error:", {
@@ -182,7 +171,7 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         `data: ${JSON.stringify({
           error: true,
           message: "Stream interrupted. Please try again.",
-        })}\n\n`
+        })}\n\n`,
       );
       res.end();
     }
@@ -194,7 +183,6 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
       cause: err.cause,
     });
 
-    // Make sure response hasn't ended yet
     if (!res.headersSent) {
       res.setHeader("Content-Type", "text/event-stream");
     }
@@ -204,7 +192,7 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         error: true,
         message:
           "An error occurred while generating suggestions. Please try again.",
-      })}\n\n`
+      })}\n\n`,
     );
     res.end();
   }
@@ -245,7 +233,6 @@ Instructions:
 
 Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
 
-    // Use OpenRouter API instead of Gemini
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -259,10 +246,10 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         body: JSON.stringify({
           model: "google/gemini-2.0-flash-exp:free",
           messages: [{ role: "user", content: enhancedPrompt }],
-          max_tokens: 800, // Limit response length
-          temperature: 0.7, // Balanced creativity
+          max_tokens: 800,
+          temperature: 0.7,
         }),
-      }
+      },
     );
 
     if (!response.ok) {
