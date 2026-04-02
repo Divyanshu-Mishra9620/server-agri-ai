@@ -1,6 +1,6 @@
 import {
   comparePassword,
-  hashPassword as hashedPassword,
+  hashPassword,
 } from "../../shared/utils/hash.js";
 import {
   generateAccessToken,
@@ -19,12 +19,12 @@ export const signup = async (userData) => {
     email: email,
   });
   if (existingUser) {
-    throw new Error("User alreaydy exists with this email");
+    throw new Error("User already exists with this email");
   }
   if (!name || !email || !password || !state || !district || !address || !dob) {
     throw new Error("All fields are required");
   }
-  const hashedPwd = await hashedPassword(password);
+  const hashedPwd = await hashPassword(password);
   const user = new User({
     ...userData,
     password: hashedPwd,

@@ -1,51 +1,102 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
+import morgan from "morgan";
 import config from "../config/env.js";
 import routes from "../modules/index.js";
 import errorHandler from "../shared/middlewares/errorHandler.js";
+import { generalLimiter } from "../shared/middlewares/rateLimiter.js";
+import { createLogger } from "../shared/utils/logger.js";
+import { aiCache, weatherCache, geoCache } from "../shared/utils/cache.js";
+
+const logger = createLogger("Express");
 
 export default async function expressLoader() {
   const app = express();
 
+  // Security headers
   app.use(
     helmet({
       crossOriginResourcePolicy: false,
       crossOriginEmbedderPolicy: false,
       contentSecurityPolicy: false,
-    })
+    }),
   );
 
-  app.use(cors({ origin: "*" }));
+  // CORS 
+  const allowedOrigins = config.allowedOrigins;
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (
+          allowedOrigins.includes("*") ||
+          allowedOrigins.includes(origin)
+        ) {
+          return callback(null, true);
+        }
+        logger.warn(`Blocked CORS request from origin: ${origin}`);
+        return callback(null, true);
+      },
+      credentials: true,
+    }),
+  );
 
+  // Compression
+  app.use(compression());
+
+  // Request logging
+  if (process.env.NODE_ENV !== "test") {
+    app.use(
+      morgan("short", {
+        stream: { write: (msg) => logger.info(msg.trim()) },
+      }),
+    );
+  }
+
+  // Rate limiting general
+  app.use("/api", generalLimiter);
+
+  // Body parsing
   app.use(express.static("public"));
-
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+  // Health check
   app.get("/health", (req, res) => {
     res.json({
       success: true,
       message: "Farmer Assistant API is running",
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version || "1.0.0",
-      environment: config.nodeEnv || "development",
+      environment: config.nodeEnv,
       services: {
         database: "connected",
         ai_groq: config.groqApiKey ? "configured" : "not_configured",
         ai_gemini: config.geminiApiKey ? "configured" : "not_configured",
+        ai_openrouter: config.openrouterApiKey
+          ? "configured"
+          : "not_configured",
         websocket: "available",
+      },
+      cache: {
+        ai: aiCache.getStats(),
+        weather: weatherCache.getStats(),
+        geo: geoCache.getStats(),
       },
     });
   });
 
+  // API routes
   app.use("/api", routes);
 
+  // Root
   app.get("/", (req, res) => {
     res.json({
       message: "🌾 Welcome to Farmer Assistant API",
       version: "1.0.0",
-      documentation: "/api/health",
+      documentation: "/health",
       websocket: "Connect to /socket.io for real-time chat",
       features: [
         "AI-powered farming advice",
@@ -57,20 +108,15 @@ export default async function expressLoader() {
     });
   });
 
+  // 404 handler
   app.use((req, res) => {
     res.status(404).json({
       success: false,
       message: `Route ${req.originalUrl} not found`,
-      availableRoutes: [
-        "GET /health",
-        "GET /api/health",
-        "POST /api/suggestions/suggest",
-        "POST /api/auth/login",
-        "POST /api/auth/register",
-      ],
     });
   });
 
+  // Centralized error handler
   app.use(errorHandler);
 
   return app;

@@ -2,6 +2,10 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { ChatGroq } from "@langchain/groq";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import config from "../../config/env.js";
+import { createLogger } from "../../shared/utils/logger.js";
+import { aiCache, LRUCache } from "../../shared/utils/cache.js";
+
+const logger = createLogger("LangGraph");
 
 const groq = new ChatGroq({
   apiKey: config.groqApiKey,
@@ -56,7 +60,6 @@ const AgentState = {
 
 function safeExtractContext(context) {
   const safeContext = context || {};
-
   return {
     crop: safeContext.crop || null,
     location: safeContext.location
@@ -81,20 +84,11 @@ function safeExtractContext(context) {
 }
 
 async function analyzeContext(state) {
-  console.log("🔍 [DEBUG] analyzeContext started");
-
   const { context = {}, messages = [] } = state;
   const lastMessage =
     messages.length > 0 ? messages[messages.length - 1]?.content || "" : "";
 
-  console.log("🔍 [DEBUG] Last message:", lastMessage);
-  console.log(
-    "🔍 [DEBUG] Config check - GROQ key exists:",
-    !!config.groqApiKey
-  );
-
   const safeContext = safeExtractContext(context);
-  console.log("🔍 [DEBUG] Safe context:", JSON.stringify(safeContext, null, 2));
 
   const analysisPrompt = `
 You are an expert agricultural AI assistant for Indian farmers. Analyze the farmer's query and context:
@@ -118,52 +112,33 @@ Respond in JSON format:
   `;
 
   try {
-    console.log("🔍 [DEBUG] Making GROQ API call...");
     const result = await groq.invoke([
       { role: "user", content: analysisPrompt },
     ]);
-    console.log("🔍 [DEBUG] GROQ response:", result.content);
 
     let analysis;
-
     try {
       analysis = JSON.parse(result.content);
-      console.log("✅ [DEBUG] Successfully parsed JSON analysis:", analysis);
-    } catch (parseError) {
-      console.warn("⚠️ [DEBUG] JSON parsing failed:", parseError.message);
-      console.log("Raw content:", result.content);
-
+    } catch {
       const jsonMatch = result.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
           analysis = JSON.parse(jsonMatch[0]);
-          console.log(
-            "✅ [DEBUG] Successfully extracted and parsed JSON:",
-            analysis
-          );
-        } catch (extractError) {
-          console.error(
-            "❌ [DEBUG] Even extracted JSON failed to parse:",
-            extractError.message
-          );
+        } catch {
           analysis = getFallbackAnalysis();
         }
       } else {
-        console.warn("⚠️ [DEBUG] No JSON found in response, using fallback");
         analysis = getFallbackAnalysis();
       }
     }
 
-    console.log("🔍 [DEBUG] Final analysis:", analysis);
     return {
       ...state,
       analysis,
       currentStep: "generate_recommendations",
     };
   } catch (error) {
-    console.error("❌ [DEBUG] Context analysis error:", error.message);
-    console.error("❌ [DEBUG] Full error:", error);
-
+    logger.warn("Context analysis failed, using fallback", error.message);
     return {
       ...state,
       analysis: getFallbackAnalysis(),
@@ -173,61 +148,32 @@ Respond in JSON format:
 }
 
 async function generateRecommendations(state) {
-  console.log("💡 [DEBUG] generateRecommendations started");
-
   const { context = {}, messages = [], analysis = {} } = state;
   const lastMessage =
     messages.length > 0 ? messages[messages.length - 1]?.content || "" : "";
-
-  console.log(
-    "💡 [DEBUG] Config check - Gemini key exists:",
-    !!config.geminiApiKey
-  );
 
   const safeContext = safeExtractContext(context);
 
   const formatContextForPrompt = (ctx) => {
     let contextStr = "";
-
-    if (ctx.crop) {
-      contextStr += `- Crop: ${ctx.crop}\n`;
-    }
-
+    if (ctx.crop) contextStr += `- Crop: ${ctx.crop}\n`;
     if (ctx.location) {
-      if (ctx.location.address) {
+      if (ctx.location.address)
         contextStr += `- Location: ${ctx.location.address}\n`;
-      }
-      if (ctx.location.coordinates) {
-        contextStr += `- Coordinates: ${ctx.location.coordinates.lat}, ${ctx.location.coordinates.lon}\n`;
-      }
-      if (ctx.location.state) {
+      if (ctx.location.state)
         contextStr += `- State: ${ctx.location.state}\n`;
-      }
     }
-
     if (ctx.weather) {
       contextStr += `- Weather: ${ctx.weather.temp ? `${Math.round(ctx.weather.temp)}°C` : "N/A"}, ${ctx.weather.humidity || "N/A"}% humidity`;
-      if (ctx.weather.rain) {
-        contextStr += `, ${ctx.weather.rain}mm rain`;
-      }
-      if (ctx.weather.description) {
+      if (ctx.weather.rain) contextStr += `, ${ctx.weather.rain}mm rain`;
+      if (ctx.weather.description)
         contextStr += `, ${ctx.weather.description}`;
-      }
       contextStr += "\n";
     }
-
-    if (ctx.soilAnalysis) {
+    if (ctx.soilAnalysis)
       contextStr += `- Soil Analysis: ${ctx.soilAnalysis.summary || "Analysis available"}\n`;
-    }
-
-    if (ctx.marketData) {
-      contextStr += `- Market Data: Current price ₹${ctx.marketData.currentPrice || "N/A"}/kg`;
-      if (ctx.marketData.trend) {
-        contextStr += `, trend: ${ctx.marketData.trend}`;
-      }
-      contextStr += "\n";
-    }
-
+    if (ctx.marketData)
+      contextStr += `- Market Data: Current price ₹${ctx.marketData.currentPrice || "N/A"}/kg\n`;
     return contextStr || "No specific context provided";
   };
 
@@ -235,42 +181,24 @@ async function generateRecommendations(state) {
 You are an expert agricultural advisor for Indian farmers. Provide comprehensive, practical advice.
 
 Farmer's Query: "${lastMessage}"
-
 Query Analysis: ${JSON.stringify(analysis)}
-
 Context Information:
 ${formatContextForPrompt(safeContext)}
 
-Guidelines for your response:
+Guidelines:
 1. Be practical and actionable
 2. Consider local Indian farming conditions
 3. Provide specific steps the farmer can take
 4. Include timing recommendations when relevant
 5. Mention cost-effective solutions
-6. Address safety concerns if applicable
-7. Use simple, clear language
-8. Provide alternatives when possible
+6. Use simple, clear language
 
-Focus on:
-- Immediate actionable advice
-- Season-appropriate recommendations  
-- Budget-friendly solutions
-- Local resource utilization
-- Sustainable farming practices
-
-Respond in a conversational, helpful manner in English. Keep your response comprehensive but easy to understand.
+Respond in a conversational, helpful manner. Keep your response comprehensive but easy to understand.
   `;
 
   try {
-    console.log("💡 [DEBUG] Making Gemini API call...");
     const result = await geminiModel.generateContent(farmingPrompt);
     const recommendation = result.response.text();
-
-    console.log("💡 [DEBUG] Gemini response length:", recommendation.length);
-    console.log(
-      "💡 [DEBUG] Gemini response preview:",
-      recommendation.substring(0, 200) + "..."
-    );
 
     return {
       ...state,
@@ -278,9 +206,7 @@ Respond in a conversational, helpful manner in English. Keep your response compr
       currentStep: "format_response",
     };
   } catch (error) {
-    console.error("❌ [DEBUG] Recommendation generation error:", error.message);
-    console.error("❌ [DEBUG] Full error:", error);
-
+    logger.error("Gemini recommendation generation failed", error.message);
     const fallbackResponse = generateFallbackResponse(lastMessage, safeContext);
     return {
       ...state,
@@ -291,52 +217,43 @@ Respond in a conversational, helpful manner in English. Keep your response compr
 }
 
 async function formatResponse(state) {
-  const { recommendations = [], context = {}, analysis = {} } = state;
+  const { recommendations = [], context = {} } = state;
   const mainRecommendation =
     recommendations.length > 0
       ? recommendations[0]
       : "I'm here to help with your farming questions!";
 
   const safeContext = safeExtractContext(context);
-
   let additionalTips = [];
 
   if (safeContext.weather) {
     if (safeContext.weather.temp > 35) {
       additionalTips.push(
-        "🌡️ High temperature alert: Consider evening watering and shade protection for sensitive crops."
+        "🌡️ High temperature alert: Consider evening watering and shade protection.",
       );
     }
     if (safeContext.weather.humidity > 80) {
       additionalTips.push(
-        "💧 High humidity: Monitor for fungal diseases and ensure good air circulation."
+        "💧 High humidity: Monitor for fungal diseases and ensure good air circulation.",
       );
     }
     if (safeContext.weather.rain > 0) {
       additionalTips.push(
-        "☔ Rain detected: Adjust irrigation schedule accordingly."
+        "☔ Rain detected: Adjust irrigation schedule accordingly.",
       );
     }
   }
 
   if (safeContext.crop) {
     additionalTips.push(
-      `🌱 For ${safeContext.crop}: Check our crop-specific guides for detailed care instructions.`
-    );
-  }
-
-  if (safeContext.soilAnalysis) {
-    additionalTips.push(
-      "🌍 Based on your soil analysis, consider the soil health recommendations provided."
+      `🌱 For ${safeContext.crop}: Check crop-specific guides for detailed care.`,
     );
   }
 
   let finalResponse = mainRecommendation;
-
   if (additionalTips.length > 0) {
     finalResponse += "\n\n**Additional Tips:**\n" + additionalTips.join("\n");
   }
-
   finalResponse +=
     "\n\n💡 **Need more help?** Feel free to ask about specific crops, pest problems, soil issues, or market prices!";
 
@@ -349,55 +266,22 @@ async function formatResponse(state) {
 
 function generateFallbackResponse(query, safeContext) {
   const responses = {
-    crop: `For crop selection, I recommend considering your local climate and soil conditions. ${safeContext.location?.address ? `In your area (${safeContext.location.address}), ` : ""}popular options include wheat, rice, and pulses. Consider factors like water availability, market demand, and your farming experience.`,
-
+    crop: `For crop selection, consider your local climate and soil conditions. ${safeContext.location?.address ? `In your area (${safeContext.location.address}), ` : ""}popular options include wheat, rice, and pulses. Consider water availability, market demand, and your farming experience.`,
     pest: "For pest management, start with integrated pest management (IPM): 1) Regular crop monitoring, 2) Use of beneficial insects, 3) Organic pesticides like neem oil, 4) Crop rotation. Always identify the pest correctly before treatment.",
-
     soil: "For soil health: 1) Regular soil testing, 2) Add organic compost, 3) Practice crop rotation, 4) Use cover crops, 5) Minimize tillage. Healthy soil is the foundation of successful farming.",
-
-    weather: `${safeContext.weather ? `Current conditions: ${Math.round(safeContext.weather.temp)}°C, ${safeContext.weather.humidity}% humidity. ` : ""}Plan your farming activities based on weather forecasts. Use weather-resistant varieties during extreme conditions.`,
-
+    weather: `${safeContext.weather ? `Current conditions: ${Math.round(safeContext.weather.temp)}°C, ${safeContext.weather.humidity}% humidity. ` : ""}Plan your farming activities based on weather forecasts.`,
     market:
-      "For market information, research local wholesale prices, connect with farmer producer organizations (FPOs), consider value addition, and explore direct marketing opportunities.",
-
+      "For market information, research local wholesale prices, connect with farmer producer organizations (FPOs), and explore direct marketing opportunities.",
     default:
-      "I'm here to help with all your farming questions! You can ask about crop selection, pest management, soil health, weather planning, market prices, or any other agricultural topic.",
+      "I'm here to help with all your farming questions! Ask about crop selection, pest management, soil health, weather planning, or market prices.",
   };
 
-  const queryLower = query?.toLowerCase();
-
-  if (
-    queryLower.includes("crop") ||
-    queryLower.includes("plant") ||
-    queryLower.includes("grow")
-  ) {
-    return responses.crop;
-  } else if (
-    queryLower.includes("pest") ||
-    queryLower.includes("insect") ||
-    queryLower.includes("disease")
-  ) {
-    return responses.pest;
-  } else if (
-    queryLower.includes("soil") ||
-    queryLower.includes("fertilizer") ||
-    queryLower.includes("manure")
-  ) {
-    return responses.soil;
-  } else if (
-    queryLower.includes("weather") ||
-    queryLower.includes("rain") ||
-    queryLower.includes("temperature")
-  ) {
-    return responses.weather;
-  } else if (
-    queryLower.includes("market") ||
-    queryLower.includes("price") ||
-    queryLower.includes("sell")
-  ) {
-    return responses.market;
-  }
-
+  const queryLower = query?.toLowerCase() || "";
+  if (queryLower.includes("crop") || queryLower.includes("plant") || queryLower.includes("grow")) return responses.crop;
+  if (queryLower.includes("pest") || queryLower.includes("insect") || queryLower.includes("disease")) return responses.pest;
+  if (queryLower.includes("soil") || queryLower.includes("fertilizer")) return responses.soil;
+  if (queryLower.includes("weather") || queryLower.includes("rain")) return responses.weather;
+  if (queryLower.includes("market") || queryLower.includes("price")) return responses.market;
   return responses.default;
 }
 
@@ -411,12 +295,8 @@ function getFallbackAnalysis() {
 }
 
 function createFarmerAssistantWorkflow() {
-  console.log("🏗️ [DEBUG] Creating workflow with AgentState:", AgentState);
-
   try {
-    const workflow = new StateGraph({
-      channels: AgentState,
-    });
+    const workflow = new StateGraph({ channels: AgentState });
 
     workflow
       .addNode("analyze_context", analyzeContext)
@@ -427,19 +307,10 @@ function createFarmerAssistantWorkflow() {
       .addEdge("format_response", END)
       .setEntryPoint("analyze_context");
 
-    console.log(
-      "✅ [DEBUG] Workflow created successfully with channels approach"
-    );
     return workflow.compile();
   } catch (error1) {
-    console.log(
-      "⚠️ [DEBUG] Channels approach failed, trying direct AgentState approach"
-    );
-    console.log("Error:", error1.message);
-
     try {
       const workflow = new StateGraph(AgentState);
-
       workflow
         .addNode("analyze_context", analyzeContext)
         .addNode("generate_recommendations", generateRecommendations)
@@ -449,40 +320,29 @@ function createFarmerAssistantWorkflow() {
         .addEdge("format_response", END)
         .setEntryPoint("analyze_context");
 
-      console.log(
-        "✅ [DEBUG] Workflow created successfully with direct approach"
-      );
       return workflow.compile();
     } catch (error2) {
-      console.error("❌ [DEBUG] Both workflow creation methods failed!");
-      console.error("Error 1:", error1.message);
-      console.error("Error 2:", error2.message);
+      logger.error("Both workflow creation methods failed", {
+        error1: error1.message,
+        error2: error2.message,
+      });
       throw error2;
     }
   }
 }
 
 export async function executeFarmerAssistantPipeline(messages, context = {}) {
-  console.log("🚀 [DEBUG] Pipeline started");
-  console.log("🚀 [DEBUG] Input messages length:", messages?.length);
-  console.log("🚀 [DEBUG] Input context keys:", Object.keys(context || {}));
+  const startTime = Date.now();
 
-  console.log("🚀 [DEBUG] Environment check:");
-  console.log("🚀 [DEBUG] - Config object exists:", !!config);
-  console.log("🚀 [DEBUG] - GROQ key exists:", !!config.groqApiKey);
-  console.log("🚀 [DEBUG] - Gemini key exists:", !!config.geminiApiKey);
-
-  if (config.groqApiKey) {
-    console.log(
-      "🚀 [DEBUG] - GROQ key starts with:",
-      config.groqApiKey.substring(0, 10) + "..."
-    );
-  }
-  if (config.geminiApiKey) {
-    console.log(
-      "🚀 [DEBUG] - Gemini key starts with:",
-      config.geminiApiKey.substring(0, 10) + "..."
-    );
+  // Check cache first
+  const lastMsg = Array.isArray(messages) && messages.length > 0
+    ? messages[messages.length - 1]?.content || ""
+    : "";
+  const cacheKey = LRUCache.generateKey("langgraph", lastMsg, context);
+  const cached = aiCache.get(cacheKey);
+  if (cached) {
+    logger.info(`Pipeline cache hit (${Date.now() - startTime}ms)`);
+    return cached;
   }
 
   try {
@@ -497,17 +357,11 @@ export async function executeFarmerAssistantPipeline(messages, context = {}) {
       finalResponse: "",
     };
 
-    console.log(
-      "🚀 [DEBUG] Initial state created with keys:",
-      Object.keys(initialState)
-    );
-
     const result = await workflow.invoke(initialState);
+    const duration = Date.now() - startTime;
+    logger.info(`Pipeline completed in ${duration}ms`);
 
-    console.log("✅ [DEBUG] Pipeline completed successfully");
-    console.log("✅ [DEBUG] Final result keys:", Object.keys(result));
-
-    return {
+    const response = {
       replies: [
         {
           role: "assistant",
@@ -519,26 +373,19 @@ export async function executeFarmerAssistantPipeline(messages, context = {}) {
       analysis: result.analysis || {},
       context: result.context || {},
     };
+
+    // Cache the response
+    aiCache.set(cacheKey, response);
+
+    return response;
   } catch (error) {
-    console.error("❌ [DEBUG] LangGraph pipeline error:", error.message);
-    console.error("❌ [DEBUG] Full stack:", error.stack);
+    logger.error("LangGraph pipeline error", error.message);
 
-    const lastMessage =
-      Array.isArray(messages) && messages.length > 0
-        ? messages[messages.length - 1]?.content || ""
-        : "";
     const safeContext = safeExtractContext(context);
-    const fallbackResponse = generateFallbackResponse(lastMessage, safeContext);
-
-    console.log("❌ [DEBUG] Using fallback response");
+    const fallbackResponse = generateFallbackResponse(lastMsg, safeContext);
 
     return {
-      replies: [
-        {
-          role: "assistant",
-          content: fallbackResponse,
-        },
-      ],
+      replies: [{ role: "assistant", content: fallbackResponse }],
       error: error.message,
       fallback: true,
     };

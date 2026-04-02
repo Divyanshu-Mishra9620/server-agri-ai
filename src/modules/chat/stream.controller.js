@@ -1,35 +1,22 @@
 import config from "../../config/env.js";
 import fetch from "node-fetch";
+import { createLogger } from "../../shared/utils/logger.js";
+import { aiCache, LRUCache } from "../../shared/utils/cache.js";
 
-export async function streamSuggestion(req, res, next) {
-  try {
-    const { query, context } = req.body;
+const logger = createLogger("StreamController");
 
-    if (!query || typeof query !== "string") {
-      return res.status(400).json({
-        success: false,
-        message: "Query is required and must be a string",
-      });
-    }
+function buildFarmingPrompt(query, context) {
+  let contextStr = "";
+  if (context) {
+    const parts = [];
+    if (context.location) parts.push(`Location: ${context.location}`);
+    if (context.crop) parts.push(`Crop: ${context.crop}`);
+    if (context.soilType) parts.push(`Soil: ${context.soilType}`);
+    if (context.season) parts.push(`Season: ${context.season}`);
+    if (parts.length > 0) contextStr = `\n\nContext: ${parts.join(" | ")}`;
+  }
 
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-
-    let contextStr = "";
-    if (context) {
-      const contextParts = [];
-      if (context.location) contextParts.push(`Location: ${context.location}`);
-      if (context.crop) contextParts.push(`Crop: ${context.crop}`);
-      if (context.soilType) contextParts.push(`Soil: ${context.soilType}`);
-      if (context.season) contextParts.push(`Season: ${context.season}`);
-      if (contextParts.length > 0) {
-        contextStr = `\n\nContext: ${contextParts.join(" | ")}`;
-      }
-    }
-
-    let enhancedPrompt = `You are 'Krishi Mitra' (कृषि मित्र), a helpful agricultural AI assistant for Indian farmers.
+  return `You are 'Krishi Mitra', a helpful agricultural AI assistant for Indian farmers.
 
 Farmer's Question: ${query}${contextStr}
 
@@ -40,30 +27,60 @@ Instructions:
 • Mention any critical warnings briefly
 • If relevant, add local Indian farming practices
 
-Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
+Keep it SHORT, CLEAR, and ACTIONABLE.`;
+}
 
-    console.log(
-      `[Stream] Starting suggestion stream for user: ${req.user?.id || "anonymous"}`,
-    );
+export async function streamSuggestion(req, res, _next) {
+  const startTime = Date.now();
+
+  try {
+    const { query, context } = req.body;
+
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Query is required and must be a string",
+      });
+    }
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    // Check cache — if hit, stream from cache immediately
+    const cacheKey = LRUCache.generateKey("stream", query, context);
+    const cached = aiCache.get(cacheKey);
+    if (cached) {
+      logger.info(`Stream cache hit for user ${req.user?.id || "anonymous"}`);
+      res.write(`data: ${JSON.stringify({ status: "connecting" })}\n\n`);
+
+      // Stream cached content word by word for smooth UX
+      const words = cached.split(" ");
+      for (let i = 0; i < words.length; i++) {
+        const content = (i > 0 ? " " : "") + words[i];
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const enhancedPrompt = buildFarmingPrompt(query, context);
 
     res.write(`data: ${JSON.stringify({ status: "connecting" })}\n\n`);
     if (res.flush) res.flush();
 
     if (!config.openrouterApiKey) {
-      console.error("[Stream] ERROR: OpenRouter API key is not configured!");
+      logger.error("OpenRouter API key is not configured");
       res.write(
-        `data: ${JSON.stringify({
-          error: true,
-          message: "API key not configured",
-        })}\n\n`,
+        `data: ${JSON.stringify({ error: true, message: "API key not configured" })}\n\n`,
       );
       res.end();
       return;
     }
-
-    console.log(
-      `[Stream] Using OpenRouter API with model: google/gemini-2.0-flash-exp:free`,
-    );
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -82,14 +99,14 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
           model: "google/gemini-2.0-flash-exp:free",
           messages: [{ role: "user", content: enhancedPrompt }],
           stream: true,
-          max_tokens: 800,
+          max_tokens: 600,
           temperature: 0.7,
         }),
         signal: controller.signal,
       });
     } catch (fetchErr) {
       clearTimeout(timeoutId);
-      console.error("[Stream] Fetch error:", fetchErr);
+      logger.error("Fetch error", fetchErr.message);
       res.write(
         `data: ${JSON.stringify({
           error: true,
@@ -107,31 +124,19 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`[Stream] OpenRouter API Error:`, {
+      logger.error("OpenRouter API error", {
         status: response.status,
-        statusText: response.statusText,
-        body: errorBody,
+        body: errorBody.substring(0, 200),
       });
-      throw new Error(
-        `OpenRouter API error: ${response.status} ${response.statusText} - ${errorBody}`,
-      );
+      throw new Error(`OpenRouter API error: ${response.status}`);
     }
 
-    console.log(
-      `[Stream] Successfully connected to OpenRouter, starting stream...`,
-    );
-
     let buffer = "";
-    let chunkCount = 0;
+    let fullResponse = "";
 
     try {
       for await (const chunk of response.body) {
-        chunkCount++;
         buffer += chunk.toString();
-        console.log(
-          `[Stream] Received chunk #${chunkCount}, size: ${chunk.length} bytes`,
-        );
-
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
@@ -145,43 +150,38 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
               const parsed = JSON.parse(data);
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
+                fullResponse += content;
                 res.write(`data: ${JSON.stringify({ content })}\n\n`);
                 if (res.flush) res.flush();
               }
-            } catch (e) {
-              console.error("[Stream] Error parsing chunk:", e.message);
+            } catch {
+              // Skip malformed chunks
             }
           }
         }
       }
 
-      console.log(`[Stream] Stream ended after ${chunkCount} chunks`);
+      // Cache the full response for future identical queries
+      if (fullResponse.length > 0) {
+        aiCache.set(cacheKey, fullResponse);
+      }
+
+      const duration = Date.now() - startTime;
+      logger.info(
+        `Stream completed for user ${req.user?.id || "anonymous"} (${duration}ms, ${fullResponse.length} chars)`,
+      );
+
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
-      console.log(
-        `[Stream] Completed suggestion stream for user: ${req.user?.id || "anonymous"}`,
-      );
     } catch (streamErr) {
-      console.error("[Stream] Stream iteration error:", {
-        message: streamErr.message,
-        stack: streamErr.stack,
-        name: streamErr.name,
-      });
+      logger.error("Stream iteration error", streamErr.message);
       res.write(
-        `data: ${JSON.stringify({
-          error: true,
-          message: "Stream interrupted. Please try again.",
-        })}\n\n`,
+        `data: ${JSON.stringify({ error: true, message: "Stream interrupted. Please try again." })}\n\n`,
       );
       res.end();
     }
   } catch (err) {
-    console.error("[Stream] Error Details:", {
-      message: err.message,
-      stack: err.stack,
-      name: err.name,
-      cause: err.cause,
-    });
+    logger.error("Stream error", err.message);
 
     if (!res.headersSent) {
       res.setHeader("Content-Type", "text/event-stream");
@@ -190,13 +190,13 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
     res.write(
       `data: ${JSON.stringify({
         error: true,
-        message:
-          "An error occurred while generating suggestions. Please try again.",
+        message: "An error occurred while generating suggestions. Please try again.",
       })}\n\n`,
     );
     res.end();
   }
 }
+
 export async function getSuggestion(req, res, next) {
   try {
     const { query, context } = req.body;
@@ -208,30 +208,21 @@ export async function getSuggestion(req, res, next) {
       });
     }
 
-    let contextStr = "";
-    if (context) {
-      const contextParts = [];
-      if (context.location) contextParts.push(`Location: ${context.location}`);
-      if (context.crop) contextParts.push(`Crop: ${context.crop}`);
-      if (context.soilType) contextParts.push(`Soil: ${context.soilType}`);
-      if (context.season) contextParts.push(`Season: ${context.season}`);
-      if (contextParts.length > 0) {
-        contextStr = `\n\nContext: ${contextParts.join(" | ")}`;
-      }
+    // Check cache
+    const cacheKey = LRUCache.generateKey("direct", query, context);
+    const cached = aiCache.get(cacheKey);
+    if (cached) {
+      logger.info("Direct suggestion cache hit");
+      return res.json({
+        success: true,
+        suggestion: cached,
+        query,
+        cached: true,
+        timestamp: new Date().toISOString(),
+      });
     }
 
-    let enhancedPrompt = `You are 'Krishi Mitra' (कृषि मित्र), a helpful agricultural AI assistant for Indian farmers.
-
-Farmer's Question: ${query}${contextStr}
-
-Instructions:
-• Give a CONCISE, practical answer (3-5 short paragraphs maximum)
-• Use simple language that farmers understand
-• Include specific steps or recommendations
-• Mention any critical warnings briefly
-• If relevant, add local Indian farming practices
-
-Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
+    const enhancedPrompt = buildFarmingPrompt(query, context);
 
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -246,7 +237,7 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
         body: JSON.stringify({
           model: "google/gemini-2.0-flash-exp:free",
           messages: [{ role: "user", content: enhancedPrompt }],
-          max_tokens: 800,
+          max_tokens: 600,
           temperature: 0.7,
         }),
       },
@@ -259,6 +250,9 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
     const data = await response.json();
     const text = data.choices[0]?.message?.content || "No response generated";
 
+    // Cache it
+    aiCache.set(cacheKey, text);
+
     res.json({
       success: true,
       suggestion: text,
@@ -266,7 +260,7 @@ Keep it SHORT, CLEAR, and ACTIONABLE. Avoid long explanations.`;
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Suggestion error:", err);
+    logger.error("Direct suggestion error", err.message);
     next(err);
   }
 }

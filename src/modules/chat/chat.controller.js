@@ -2,7 +2,15 @@ import * as chatService from "./chat.service.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import config from "../../config/env.js";
 import fs from "fs";
+import { createLogger } from "../../shared/utils/logger.js";
+import {
+  aiCache,
+  weatherCache,
+  geoCache,
+  LRUCache,
+} from "../../shared/utils/cache.js";
 
+const logger = createLogger("ChatController");
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
 export async function chatSuggest(req, res, next) {
@@ -15,6 +23,7 @@ export async function chatSuggest(req, res, next) {
         message: "messages array is required and cannot be empty",
       });
     }
+
     const enrichedContext = {
       ...context,
       userId: req.user?.id,
@@ -26,12 +35,9 @@ export async function chatSuggest(req, res, next) {
       context: enrichedContext,
     });
 
-    res.json({
-      success: true,
-      ...result,
-    });
+    res.json({ success: true, ...result });
   } catch (err) {
-    console.error("Chat suggest error:", err);
+    logger.error("Chat suggest error", err.message);
     next(err);
   }
 }
@@ -47,8 +53,16 @@ export async function geocodeAddress(req, res, next) {
       });
     }
 
+    // Check cache
+    const cacheKey = LRUCache.generateKey("geo", address);
+    const cached = geoCache.get(cacheKey);
+    if (cached) {
+      logger.info("Geocode cache hit", address);
+      return res.json({ success: true, ...cached, cached: true });
+    }
+
     const response = await fetch(
-      `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(address)}&key=${process.env.OPENCAGE_API_KEY || "demo"}&limit=1&countrycode=IN`
+      `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(address)}&key=${process.env.OPENCAGE_API_KEY || "demo"}&limit=1&countrycode=IN`,
     );
 
     if (!response.ok) {
@@ -59,15 +73,19 @@ export async function geocodeAddress(req, res, next) {
 
     if (data.results && data.results.length > 0) {
       const result = data.results[0];
-      res.json({
-        success: true,
+      const geoData = {
         lat: result.geometry.lat,
         lon: result.geometry.lng,
         formatted: result.formatted,
         state: result.components.state,
         district: result.components.county || result.components.state_district,
         country: result.components.country,
-      });
+      };
+
+      // Cache geocode results (24 hours)
+      geoCache.set(cacheKey, geoData);
+
+      res.json({ success: true, ...geoData });
     } else {
       res.status(404).json({
         success: false,
@@ -75,7 +93,7 @@ export async function geocodeAddress(req, res, next) {
       });
     }
   } catch (err) {
-    console.error("Geocoding error:", err);
+    logger.warn("Geocoding error, using fallback", err.message);
     res.json({
       success: true,
       lat: 28.6139,
@@ -84,6 +102,7 @@ export async function geocodeAddress(req, res, next) {
       state: "Delhi",
       district: "New Delhi",
       country: "India",
+      fallback: true,
     });
   }
 }
@@ -99,16 +118,17 @@ export async function getWeather(req, res, next) {
       });
     }
 
-    const apiKey = process.env.OPENWEATHER_API_KEY || "demo";
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
-    );
-
-    if (!response.ok && apiKey !== "demo") {
-      throw new Error("Weather service error");
+    // Check cache
+    const cacheKey = LRUCache.generateKey("weather", lat, lon);
+    const cached = weatherCache.get(cacheKey);
+    if (cached) {
+      logger.info("Weather cache hit");
+      return res.json({ success: true, ...cached, cached: true });
     }
 
+    const apiKey = process.env.OPENWEATHER_API_KEY || "demo";
     let weatherData;
+
     if (apiKey === "demo") {
       weatherData = {
         main: { temp: 28, humidity: 65 },
@@ -116,24 +136,33 @@ export async function getWeather(req, res, next) {
         rain: { "1h": 0 },
       };
     } else {
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`,
+      );
+      if (!response.ok) throw new Error("Weather service error");
       weatherData = await response.json();
     }
 
-    res.json({
-      success: true,
+    const result = {
       temp: weatherData.main.temp,
       humidity: weatherData.main.humidity,
       description: weatherData.weather[0].description,
       rain: weatherData.rain?.["1h"] || 0,
-    });
+    };
+
+    // Cache weather (10 minutes)
+    weatherCache.set(cacheKey, result);
+
+    res.json({ success: true, ...result });
   } catch (err) {
-    console.error("Weather error:", err);
+    logger.warn("Weather error, using fallback", err.message);
     res.json({
       success: true,
       temp: 26,
       humidity: 70,
       description: "clear sky",
       rain: 0,
+      fallback: true,
     });
   }
 }
@@ -161,12 +190,9 @@ export async function getMarketTrends(req, res, next) {
         mockTrends.prices[crop?.toLowerCase()] || "Price not available";
     }
 
-    res.json({
-      success: true,
-      ...mockTrends,
-    });
+    res.json({ success: true, ...mockTrends });
   } catch (err) {
-    console.error("Market trends error:", err);
+    logger.error("Market trends error", err.message);
     next(err);
   }
 }
@@ -203,20 +229,14 @@ export async function analyzeSoil(req, res, next) {
 
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      const prompt = `
-You are an expert soil scientist. Analyze this soil/plant image and provide:
-
+      const prompt = `You are an expert soil scientist. Analyze this soil/plant image and provide:
 1. Soil condition assessment
 2. Nutrient deficiency signs (if any)
 3. Pest or disease indicators (if visible)
 4. Specific recommendations for ${crop || "the crop"}
 5. Overall health rating (1-10)
-
 ${crop ? `Focus on requirements for ${crop} cultivation.` : ""}
-
-Provide practical, actionable advice for Indian farming conditions.
-Keep the response concise but informative.
-      `;
+Provide practical, actionable advice for Indian farming conditions. Keep the response concise.`;
 
       const result = await model.generateContent([
         prompt,
@@ -237,12 +257,13 @@ Keep the response concise but informative.
         crop: crop || null,
       });
     } finally {
+      // Clean up uploaded file
       if (fs.existsSync(imagePath)) {
         fs.unlinkSync(imagePath);
       }
     }
   } catch (err) {
-    console.error("Soil analysis error:", err);
+    logger.error("Soil analysis error", err.message);
 
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
