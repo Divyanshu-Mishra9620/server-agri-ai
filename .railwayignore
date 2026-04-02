@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+node_modules
+npm-debug.log
+.DS_Store
+*.md
+test-voice-assistant.js
+.vscode
+.idea
+dist
+build
+coverage
