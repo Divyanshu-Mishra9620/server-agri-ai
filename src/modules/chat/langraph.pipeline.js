@@ -7,13 +7,18 @@ import { aiCache, LRUCache } from "../../shared/utils/cache.js";
 
 const logger = createLogger("LangGraph");
 
-const groq = new ChatGroq({
-  apiKey: config.groqApiKey,
-  model: "llama-3.1-70b-versatile",
-});
+const groq = config.groqApiKey
+  ? new ChatGroq({
+      apiKey: config.groqApiKey,
+      model: "llama-3.1-70b-versatile",
+    })
+  : null;
 
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const geminiModel = config.geminiApiKey
+  ? new GoogleGenerativeAI(config.geminiApiKey).getGenerativeModel({
+      model: "gemini-1.5-flash",
+    })
+  : null;
 
 const AgentState = {
   messages: {
