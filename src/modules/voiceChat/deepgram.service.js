@@ -1,7 +1,13 @@
 import { createClient } from "@deepgram/sdk";
 import config from "../../config/env.js";
 
-const deepgram = createClient(config.DEEPGRAM_API_KEY);
+const getDeepgramClient = () => {
+  if (!config.DEEPGRAM_API_KEY) {
+    throw new Error("DEEPGRAM_API_KEY not configured");
+  }
+
+  return createClient(config.DEEPGRAM_API_KEY);
+};
 
 export const transcribeAudio = async (
   audioData,
@@ -9,6 +15,7 @@ export const transcribeAudio = async (
   mimetype = "audio/webm"
 ) => {
   try {
+    const deepgram = getDeepgramClient();
     const audioBuffer = Buffer.from(audioData, "base64");
 
     if (audioBuffer.length < 100) {
@@ -92,6 +99,7 @@ export const transcribeAudio = async (
 
 export const synthesizeSpeech = async (text, language = "hi") => {
   try {
+    const deepgram = getDeepgramClient();
     const primaryModel =
       language === "hindi" ? "aura-asteria-hi" : "aura-asteria-en";
     const fallbackModel = "aura-luna-en";
@@ -161,6 +169,7 @@ export const getSupportedLanguages = () => ({
 
 export const checkDeepgramHealth = async () => {
   try {
+    const deepgram = getDeepgramClient();
     const testAudio = Buffer.from("test-audio-data");
     await deepgram.listen.prerecorded.transcribeFile(testAudio, {
       model: "general",

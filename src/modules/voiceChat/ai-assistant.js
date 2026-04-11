@@ -1,12 +1,20 @@
 import Groq from "groq-sdk";
 import config from "../../config/env.js";
 
-const groq = new Groq({
-  apiKey: config.groqApiKey,
-});
+const getGroqClient = () => {
+  if (!config.groqApiKey) {
+    throw new Error("GROQ_API_KEY not configured");
+  }
+
+  return new Groq({
+    apiKey: config.groqApiKey,
+  });
+};
 
 export const generateFarmerResponse = async (userQuery, language, userId) => {
   try {
+    const groq = getGroqClient();
+
     const systemPrompt =
       language === "hindi"
         ? `आप एक अनुभवी कृषि विशेषज्ञ हैं जो भारतीय किसानों की मदद करते हैं। आपको निम्नलिखित क्षेत्रों में गहरी विशेषज्ञता है:
