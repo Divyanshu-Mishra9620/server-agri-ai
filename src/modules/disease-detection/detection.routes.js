@@ -10,6 +10,7 @@ import {
 } from "./detection.controller.js";
 import { uploadSingle } from "../../shared/utils/upload.js";
 import { authMiddleware } from "../../shared/middlewares/authMiddleware.js";
+import { aiLimiter } from "../../shared/middlewares/rateLimiter.js";
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -94,6 +95,7 @@ const listValidation = {
 router.post(
   "/",
   authMiddleware,
+  aiLimiter,
   uploadSingle,
   checkSchema(analysisValidation),
   validate,
@@ -108,7 +110,7 @@ router.get(
   listUserAnalyses
 );
 router.get("/stats/summary", authMiddleware, getStats);
-router.post("/:id/retry", authMiddleware, retryAnalysis);
+router.post("/:id/retry", authMiddleware, aiLimiter, retryAnalysis);
 router.delete("/:id", authMiddleware, deleteAnalysis);
 
 export default router;
