@@ -16,3 +16,7 @@ Thumbs.db
 # Uploads (optional - uncomment if you don't want to track uploads)
 # public/uploads/*
 # uploads/*
+
+# Nested standalone repos (separate GitHub remotes, never embed as submodules)
+/frontend/
+/rag/

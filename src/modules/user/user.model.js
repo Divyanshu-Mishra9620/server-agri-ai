@@ -33,10 +33,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    languague: {
+    language: {
       type: String,
-      enum: ["english", "hindi"],
-      default: "english",
+      enum: ["en", "hi", "te"],
+      default: "en",
     },
     state: {
       type: String,

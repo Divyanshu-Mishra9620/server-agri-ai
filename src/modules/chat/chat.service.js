@@ -761,7 +761,7 @@ export const getChannelById = async (channelId, userId) => {
   const channel = await CommunityChannel.aggregate([
     {
       $match: {
-        _id: mongoose.Types.ObjectId(channelId),
+        _id: new mongoose.Types.ObjectId(channelId),
         isActive: true,
       },
     },
@@ -1162,7 +1162,7 @@ export const getChannelAnalytics = async (channelId, userId, days = 7) => {
   const analytics = await CommunityAnalytics.aggregate([
     {
       $match: {
-        channelId: mongoose.Types.ObjectId(channelId),
+        channelId: new mongoose.Types.ObjectId(channelId),
         date: { $gte: startDate },
       },
     },
@@ -1174,7 +1174,7 @@ export const getChannelAnalytics = async (channelId, userId, days = 7) => {
   const overallStats = await CommunityMessage.aggregate([
     {
       $match: {
-        channelId: mongoose.Types.ObjectId(channelId),
+        channelId: new mongoose.Types.ObjectId(channelId),
         createdAt: { $gte: startDate },
       },
     },
@@ -1216,7 +1216,7 @@ export const searchMessages = async (query, userId, options = {}) => {
     if (!isMember) {
       throw new Error("Access denied");
     }
-    channelFilter.channelId = mongoose.Types.ObjectId(channelId);
+    channelFilter.channelId = new mongoose.Types.ObjectId(channelId);
   } else {
     const userChannels = await ChannelMember.find({
       userId,

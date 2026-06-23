@@ -37,7 +37,7 @@ export default async function expressLoader() {
           return callback(null, true);
         }
         logger.warn(`Blocked CORS request from origin: ${origin}`);
-        return callback(null, true);
+        return callback(new Error("Not allowed by CORS"));
       },
       credentials: true,
     }),

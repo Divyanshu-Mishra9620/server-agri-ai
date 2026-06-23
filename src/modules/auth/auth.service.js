@@ -9,6 +9,7 @@ import {
 } from "../../shared/utils/jwt.js";
 import User from "../user/user.model.js";
 import { sendEmail } from "../../shared/utils/email.js";
+import config from "../../config/env.js";
 import crypto from "crypto";
 
 export const signup = async (userData) => {
@@ -58,7 +59,7 @@ export const login = async (email, password) => {
 };
 
 export const refreshAccessToken = async (refreshToken) => {
-  const payload = verifyToken(refreshToken, process.env.JWT_REFRESH_SECRET);
+  const payload = verifyToken(refreshToken, config.jwtRefreshSecret);
   const user = await User.findById(payload.id);
   if (!user || user.refreshToken !== refreshToken) {
     throw new Error("Invalid refresh token");
