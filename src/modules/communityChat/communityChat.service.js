@@ -318,6 +318,65 @@ export const removeReaction = async (messageId, userId, emoji) => {
   return message;
 };
 
+export const toggleMessageReaction = async (messageId, userId, emoji) => {
+  const message = await CommunityMessage.findById(messageId);
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  const existingReaction = message.reactions.find(
+    (r) => r.userId.toString() === userId.toString() && r.emoji === emoji
+  );
+
+  let action;
+  if (existingReaction) {
+    message.reactions = message.reactions.filter(
+      (r) => !(r.userId.toString() === userId.toString() && r.emoji === emoji)
+    );
+    action = "remove";
+  } else {
+    message.reactions.push({ userId, emoji });
+    action = "add";
+  }
+
+  await message.save();
+
+  const reactionCounts = {};
+  message.reactions.forEach((reaction) => {
+    reactionCounts[reaction.emoji] = (reactionCounts[reaction.emoji] || 0) + 1;
+  });
+
+  return {
+    channelId: message.channelId,
+    action,
+    reactionCounts,
+  };
+};
+
+export const editCommunityMessage = async (messageId, userId, newContent) => {
+  const message = await CommunityMessage.findById(messageId);
+
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  if (message.userId.toString() !== userId.toString()) {
+    throw new Error("Unauthorized");
+  }
+
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  if (message.createdAt < fifteenMinutesAgo) {
+    throw new Error("Message too old to edit");
+  }
+
+  message.content = newContent.trim();
+  message.isEdited = true;
+  message.editedAt = new Date();
+  await message.save();
+
+  return message;
+};
+
 export const getUserChannels = async (userId) => {
   const channels = await ChannelMember.aggregate([
     {

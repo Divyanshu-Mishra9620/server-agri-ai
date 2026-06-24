@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import * as chatService from "./chat.service.js";
+import * as communityChatService from "../communityChat/communityChat.service.js";
 import { Conversation, Analytics } from "./chat.models.js";
 import jwt from "jsonwebtoken";
 import config from "../../config/env.js";
@@ -318,13 +319,7 @@ export function initSocket(server) {
 
     socket.on("join_community_channel", async ({ channelId }) => {
       try {
-        if (typeof chatService.isChannelMember !== "function") {
-          console.error("isChannelMember function not found in chatService");
-          socket.emit("error", { message: "Channel service not available" });
-          return;
-        }
-
-        const isMember = await chatService.isChannelMember(
+        const isMember = await communityChatService.isChannelMember(
           channelId,
           socket.userId
         );
@@ -396,17 +391,7 @@ export function initSocket(server) {
             `Received community message from user ${socket.userId} for channel ${channelId}`
           );
 
-          if (typeof chatService.isChannelMember !== "function") {
-            socket.emit("error", { message: "Channel service not available" });
-            return;
-          }
-
-          if (typeof chatService.sendCommunityMessage !== "function") {
-            socket.emit("error", { message: "Message service not available" });
-            return;
-          }
-
-          const isMember = await chatService.isChannelMember(
+          const isMember = await communityChatService.isChannelMember(
             channelId,
             socket.userId
           );
@@ -432,12 +417,8 @@ export function initSocket(server) {
             mentions,
           };
 
-          const message = await chatService.sendCommunityMessage(messageData);
-
-          const populatedMessage = await message.populate([
-            { path: "userId", select: "name email" },
-            { path: "mentions", select: "name email" },
-          ]);
+          const populatedMessage =
+            await communityChatService.sendMessage(messageData);
 
           io.to(`channel:${channelId}`).emit("new_community_message", {
             message: populatedMessage,
@@ -474,12 +455,7 @@ export function initSocket(server) {
       }
 
       try {
-        if (typeof chatService.toggleMessageReaction !== "function") {
-          socket.emit("error", { message: "Reaction service not available" });
-          return;
-        }
-
-        const result = await chatService.toggleMessageReaction(
+        const result = await communityChatService.toggleMessageReaction(
           messageId,
           socket.userId,
           emoji
@@ -524,12 +500,7 @@ export function initSocket(server) {
       }
 
       try {
-        if (typeof chatService.deleteCommunityMessage !== "function") {
-          socket.emit("error", { message: "Delete service not available" });
-          return;
-        }
-
-        const result = await chatService.deleteCommunityMessage(
+        const result = await communityChatService.deleteMessage(
           messageId,
           socket.userId
         );
@@ -553,12 +524,7 @@ export function initSocket(server) {
       }
 
       try {
-        if (typeof chatService.editCommunityMessage !== "function") {
-          socket.emit("error", { message: "Edit service not available" });
-          return;
-        }
-
-        const message = await chatService.editCommunityMessage(
+        const message = await communityChatService.editCommunityMessage(
           messageId,
           socket.userId,
           newContent
