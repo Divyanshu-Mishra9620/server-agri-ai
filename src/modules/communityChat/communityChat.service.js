@@ -288,6 +288,18 @@ export const sendMessage = async (messageData) => {
   ]);
 };
 
+export const addReply = async (messageId, userId, content) => {
+  const message = await CommunityMessage.findById(messageId);
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  message.replies.push({ userId, content });
+  await message.save();
+
+  return message.populate("replies.userId", "name email");
+};
+
 export const addReaction = async (messageId, userId, emoji) => {
   const message = await CommunityMessage.findById(messageId);
   if (!message) {

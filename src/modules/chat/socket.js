@@ -447,6 +447,49 @@ export function initSocket(server) {
       }
     );
 
+    socket.on("reply_to_message", async ({ messageId, channelId, content }) => {
+      const limit = checkGeneralSocketLimit(socket.userId);
+      if (!limit.allowed) {
+        socket.emit("error", { message: "Too many requests. Please slow down." });
+        return;
+      }
+
+      try {
+        if (!content || !content.trim()) {
+          socket.emit("error", { message: "Reply cannot be empty" });
+          return;
+        }
+
+        const isMember = await communityChatService.isChannelMember(
+          channelId,
+          socket.userId
+        );
+        if (!isMember) {
+          socket.emit("error", {
+            message: "Access denied - not a channel member",
+          });
+          return;
+        }
+
+        const message = await communityChatService.addReply(
+          messageId,
+          socket.userId,
+          content.trim()
+        );
+
+        io.to(`channel:${channelId}`).emit("message_replied", {
+          messageId,
+          channelId,
+          reply: message.replies[message.replies.length - 1],
+        });
+      } catch (error) {
+        console.error("Reply message error:", error);
+        socket.emit("error", {
+          message: "Failed to send reply: " + error.message,
+        });
+      }
+    });
+
     socket.on("toggle_message_reaction", async ({ messageId, emoji }) => {
       const limit = checkGeneralSocketLimit(socket.userId);
       if (!limit.allowed) {
