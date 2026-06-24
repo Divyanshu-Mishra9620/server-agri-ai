@@ -3,6 +3,10 @@ import * as chatService from "./chat.service.js";
 import { Conversation, Analytics } from "./chat.models.js";
 import jwt from "jsonwebtoken";
 import config from "../../config/env.js";
+import {
+  checkAiSocketLimit,
+  checkGeneralSocketLimit,
+} from "../../shared/utils/socketRateLimiter.js";
 
 let io;
 
@@ -221,6 +225,15 @@ export function initSocket(server) {
       async ({ messages, context, conversationId, sessionId }) => {
         const startTime = Date.now();
 
+        const limit = checkAiSocketLimit(socket.userId);
+        if (!limit.allowed) {
+          socket.emit("chat_error", {
+            message: "You're sending messages too quickly. Please slow down.",
+            retryAfterMs: limit.retryAfterMs,
+          });
+          return;
+        }
+
         try {
           console.log(`Received chat message from user ${socket.userId}`);
 
@@ -369,6 +382,15 @@ export function initSocket(server) {
     socket.on(
       "send_community_message",
       async ({ channelId, content, messageType = "text", mentions = [] }) => {
+        const limit = checkGeneralSocketLimit(socket.userId);
+        if (!limit.allowed) {
+          socket.emit("error", {
+            message: "You're sending messages too quickly. Please slow down.",
+            retryAfterMs: limit.retryAfterMs,
+          });
+          return;
+        }
+
         try {
           console.log(
             `Received community message from user ${socket.userId} for channel ${channelId}`
@@ -445,6 +467,12 @@ export function initSocket(server) {
     );
 
     socket.on("toggle_message_reaction", async ({ messageId, emoji }) => {
+      const limit = checkGeneralSocketLimit(socket.userId);
+      if (!limit.allowed) {
+        socket.emit("error", { message: "Too many requests. Please slow down." });
+        return;
+      }
+
       try {
         if (typeof chatService.toggleMessageReaction !== "function") {
           socket.emit("error", { message: "Reaction service not available" });
@@ -489,6 +517,12 @@ export function initSocket(server) {
     });
 
     socket.on("delete_community_message", async ({ messageId }) => {
+      const limit = checkGeneralSocketLimit(socket.userId);
+      if (!limit.allowed) {
+        socket.emit("error", { message: "Too many requests. Please slow down." });
+        return;
+      }
+
       try {
         if (typeof chatService.deleteCommunityMessage !== "function") {
           socket.emit("error", { message: "Delete service not available" });
@@ -512,6 +546,12 @@ export function initSocket(server) {
     });
 
     socket.on("edit_community_message", async ({ messageId, newContent }) => {
+      const limit = checkGeneralSocketLimit(socket.userId);
+      if (!limit.allowed) {
+        socket.emit("error", { message: "Too many requests. Please slow down." });
+        return;
+      }
+
       try {
         if (typeof chatService.editCommunityMessage !== "function") {
           socket.emit("error", { message: "Edit service not available" });
@@ -568,6 +608,14 @@ export function initSocket(server) {
     });
 
     socket.on("analyze_soil", async ({ imageData, crop, conversationId }) => {
+      const limit = checkAiSocketLimit(socket.userId);
+      if (!limit.allowed) {
+        socket.emit("analysis_error", {
+          message: "Too many analysis requests. Please slow down.",
+        });
+        return;
+      }
+
       try {
         socket.emit("analysis_status", {
           status: "processing",
