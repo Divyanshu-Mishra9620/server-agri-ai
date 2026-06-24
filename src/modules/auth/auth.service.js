@@ -74,11 +74,6 @@ export const refreshAccessToken = async (refreshToken) => {
   return { accessToken };
 };
 
-export const resetPassword = async (userId, newPassword) => {
-  const hashedPassword = await hashPassword(newPassword);
-  return await User.findByIdAndUpdate(userId, { password: hashedPassword });
-};
-
 export const getProfile = async (userId) => {
   return await User.findById(userId).select("-password -refreshToken");
 };

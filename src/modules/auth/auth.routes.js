@@ -11,7 +11,6 @@ router.post("/signup", authLimiter, validateRequest(createUserSchema), authContr
 router.post("/login", authLimiter, validateRequest(loginSchema), authController.login);
 router.post("/refresh", authController.refresh);
 router.post("/logout", authMiddleware, authController.logout);
-router.post("/reset-password", authMiddleware, authController.resetPassword);
 router.get("/profile", authMiddleware, authController.profile);
 router.post("/forgot-password", authLimiter, authController.forgotPassword);
 router.post("/reset-password-token", authLimiter, authController.resetPasswordWithToken);
