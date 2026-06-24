@@ -77,9 +77,15 @@ export const getProfile = async (userId) => {
   return await User.findById(userId).select("-password -refreshToken");
 };
 
+const GENERIC_FORGOT_PASSWORD_RESPONSE = {
+  message: "If an account exists for that email, a reset link has been sent.",
+};
+
 export const forgotPassword = async (email) => {
   const user = await User.findOne({ email });
-  if (!user) throw new Error("User not found");
+  // Always return the same response whether or not the email is registered,
+  // so this endpoint can't be used to enumerate valid accounts.
+  if (!user) return GENERIC_FORGOT_PASSWORD_RESPONSE;
 
   const resetToken = crypto.randomBytes(32).toString("hex");
   const resetTokenHash = crypto
@@ -91,7 +97,7 @@ export const forgotPassword = async (email) => {
   user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
   await user.save();
 
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+  const resetUrl = `${config.frontendUrl}/reset-password/${resetToken}`;
   await sendEmail(
     user.email,
     "Password Reset Request",
@@ -99,7 +105,7 @@ export const forgotPassword = async (email) => {
     `<p>Click <a href="${resetUrl}">here</a> to reset your password. Link expires in 15 minutes.</p>`
   );
 
-  return { message: "Password reset email sent" };
+  return GENERIC_FORGOT_PASSWORD_RESPONSE;
 };
 
 export const resetPasswordWithToken = async (token, newPassword) => {
