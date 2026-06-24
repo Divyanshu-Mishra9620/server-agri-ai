@@ -32,6 +32,7 @@ export const signup = async (userData) => {
   });
 
   await user.save();
+  user.password = undefined;
   return user;
 };
 
@@ -54,6 +55,11 @@ export const login = async (email, password) => {
 
   user.refreshToken = refreshToken;
   await user.save();
+
+  user.password = undefined;
+  user.refreshToken = undefined;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
 
   return { user, accessToken, refreshToken };
 };
