@@ -1,0 +1,16 @@
+{
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "startCommand": "npm run start",
+    "restartPolicy": "on-failure",
+    "healthcheck": {
+      "test": ["CMD", "curl", "-f", "http://localhost:$PORT/health"],
+      "interval": 30,
+      "timeout": 10,
+      "retries": 3,
+      "startPeriod": 40
+    }
+  }
+}

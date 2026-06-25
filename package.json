@@ -1,0 +1,10 @@
+{
+  "name": "server-agri-ai-root",
+  "private": true,
+  "description": "Deploy-platform entry point that delegates into backend/, since Railway/Vercel build from the repo root and their Root Directory setting isn't changeable here.",
+  "scripts": {
+    "postinstall": "npm --prefix backend ci",
+    "start": "npm --prefix backend run start",
+    "dev": "npm --prefix backend run dev"
+  }
+}
