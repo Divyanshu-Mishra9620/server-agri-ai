@@ -10,7 +10,7 @@ const logger = createLogger("LangGraph");
 const groq = config.groqApiKey
   ? new ChatGroq({
       apiKey: config.groqApiKey,
-      model: "llama-3.1-70b-versatile",
+      model: "llama-3.3-70b-versatile",
     })
   : null;
 
